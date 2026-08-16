@@ -1,0 +1,40 @@
+ЯНДЕКС ИГРЫ — черновик
+======================
+
+Название (ru): Крипто-Капибара
+Название (en): Crypto Capybara
+
+Об игре (ru):
+Тапай по капибаре, копи КапиКоины и строй фермы, стейкинг и NFT. Тапай сериями — растёт комбо. Каждый день забирай награду и не ломай стрик. Когда забег жирный — ребирт: сброс ферм, множитель навсегда. Переодевай капибару и лезь в таблицу лидеров.
+
+Об игре (en):
+Tap a capybara, mine CapyCoins and build farms, staking pools and NFTs. Tap in a streak for combo. Claim the daily and protect the streak. When a run is fat — rebirth: farms reset, the multiplier stays. Dress the capy and climb the leaderboard.
+
+Как играть (ru):
+1. Тапай по капибаре. Быстрые серии дают комбо x1.5–x3.
+2. В магазине четыре ветки: тап, майнинг, инфлюенсеры, стейкинг/NFT.
+3. Раз в день забери награду. Стрик из 7 дней даёт жирный приз и скин.
+4. Когда накопишь достаточно за забег — сделай ребирт. Фермы сгорят, множитель останется.
+5. Кнопки «x2», «мешок», оффлайн x2 и часть скинов — реклама по желанию.
+6. Топ доступен после входа в Яндекс. Прогресс пишется сам, в том числе в облако.
+
+Как играть (en):
+1. Tap the capybara. Fast streaks give combo x1.5–x3.
+2. Shop branches: tap, mining, influencers, staking/NFTs.
+3. Claim the daily. A 7-day streak pays a fat prize and a skin.
+4. When the run is big enough — rebirth. Farms burn, the multiplier stays.
+5. x2, the sack, offline x2 and some skins are optional ads.
+6. The leaderboard needs a Yandex sign-in. Progress saves automatically, including the cloud.
+
+Категории: Кликеры, Симуляторы, Казуальные, Экономика
+Возраст: 0+
+Ориентация: обе (портрет предпочтителен)
+Платформы: мобильные + десктоп
+Облачные сохранения: да
+Монетизация: РСЯ, fullscreen + rewarded (+ sticky по желанию)
+Лидерборды (создать в Консоли, тех. имена):
+  cct_earned    — общий заработок
+  cct_cps       — максимальный CPS
+  cct_prestige  — число ребиртов
+
+Версия: 1.1.0
