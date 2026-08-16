@@ -100,6 +100,22 @@ window.CCT_SDK = (function () {
           return Promise.reject({ code: 'LEADERBOARD_PLAYER_NOT_PRESENT' });
         },
       },
+      getPayments: function () {
+        return Promise.resolve({
+          getCatalog: function () {
+            return Promise.resolve([]);
+          },
+          getPurchases: function () {
+            return Promise.resolve([]);
+          },
+          purchase: function (opts) {
+            return Promise.resolve({ productID: opts.id, purchaseToken: 'mock-' + opts.id });
+          },
+          consumePurchase: function () {
+            return Promise.resolve();
+          },
+        });
+      },
       isAvailableMethod: function () {
         return Promise.resolve(false);
       },
@@ -136,7 +152,9 @@ window.CCT_SDK = (function () {
         return ysdk.getPlayer()
           .then((p) => {
             player = p;
-            return ysdk;
+            return initPayments().then(function () {
+              return ysdk;
+            });
           })
           .catch(() => ysdk);
       })
@@ -179,6 +197,7 @@ window.CCT_SDK = (function () {
   function canShowInterstitial() {
     const cfg = CFG();
     const now = Date.now();
+    if (noAds) return false;
     if (adOpen) return false;
     if (now - sessionStartedAt < cfg.INTERSTITIAL_FIRST_DELAY_MS) return false;
     if (lastInterstitialAt && now - lastInterstitialAt < cfg.INTERSTITIAL_COOLDOWN_MS) return false;
@@ -317,6 +336,60 @@ window.CCT_SDK = (function () {
     });
   }
 
+  let payments = null;
+  let noAds = false;
+
+  function setNoAds(v) {
+    noAds = !!v;
+  }
+
+  function initPayments() {
+    if (!ysdk || !ysdk.getPayments) return Promise.resolve(null);
+    return ysdk
+      .getPayments({ signed: false })
+      .then(function (p) {
+        payments = p;
+        return p;
+      })
+      .catch(function (e) {
+        console.warn('[YG] payments unavailable', e);
+        return null;
+      });
+  }
+
+  function getCatalog() {
+    if (!payments || !payments.getCatalog) return Promise.resolve([]);
+    return payments.getCatalog().catch(function () {
+      return [];
+    });
+  }
+
+  function getPurchases() {
+    if (!payments || !payments.getPurchases) return Promise.resolve([]);
+    return payments.getPurchases().catch(function () {
+      return [];
+    });
+  }
+
+  function purchase(id) {
+    if (!payments || !payments.purchase) {
+      return Promise.resolve({ productID: id, purchaseToken: 'mock-' + id, mock: true });
+    }
+    return payments.purchase({ id: id });
+  }
+
+  function consumePurchase(token) {
+    if (!token || String(token).indexOf('mock') === 0) return Promise.resolve();
+    if (!payments || !payments.consumePurchase) return Promise.resolve();
+    return payments.consumePurchase(token);
+  }
+
+  function vibrate(ms) {
+    try {
+      if (navigator.vibrate) navigator.vibrate(ms || 10);
+    } catch (e) { /* ignore */ }
+  }
+
   let lastScoreAt = 0;
   function setScore(name, score, extra) {
     if (!ysdk || !ysdk.leaderboards || !ysdk.leaderboards.setScore) return Promise.resolve();
@@ -366,6 +439,13 @@ window.CCT_SDK = (function () {
     getEntries: getEntries,
     isAuthorized: isAuthorized,
     openAuth: openAuth,
+    initPayments: initPayments,
+    getCatalog: getCatalog,
+    getPurchases: getPurchases,
+    purchase: purchase,
+    consumePurchase: consumePurchase,
+    setNoAds: setNoAds,
+    vibrate: vibrate,
     getLang: getLang,
     isMock: isMock,
     on: on,

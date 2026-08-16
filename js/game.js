@@ -46,6 +46,18 @@
     pendingOffline: 0,
     paused: false,
     shopOpen: false,
+    oranges: 0,
+    ascensionCount: 0,
+    whale: {},
+    achieved: {},
+    accUnlocked: {},
+    accOn: {},
+    iap: { noAds: false, permMult: false, starter: false },
+    lifetimeTaps: 0,
+    bestCombo: 0,
+    lastMiniAt: 0,
+    title: '',
+    seen: { daily: false, quests: false, skins: false, album: false },
   };
 
   let lastTick = 0;
@@ -136,15 +148,37 @@
   }
 
   function eventMult() {
-    if (state.eventId === 'bull' && state.eventUntil > Date.now()) {
+    if (state.eventUntil <= Date.now()) return 1;
+    if (state.eventId === 'bull' || state.eventId === 'bear') {
       const ev = eventDef();
-      return (ev && ev.mult) || 2.5;
+      return (ev && ev.mult) || 1;
     }
     return 1;
   }
 
+  function rewardMult() {
+    if (state.eventId === 'bear' && state.eventUntil > Date.now()) {
+      const ev = eventDef();
+      return (ev && ev.rewardMult) || 2;
+    }
+    return 1;
+  }
+
+  function whaleLv(id) {
+    return state.whale[id] || 0;
+  }
+
+  function whaleDef(id) {
+    return CFG.WHALE.find((w) => w.id === id);
+  }
+
+  function whaleCost(id) {
+    const u = whaleDef(id);
+    return Math.floor(u.base * Math.pow(u.costMult, whaleLv(id)));
+  }
+
   function comboWindow() {
-    let w = CFG.COMBO.windowMs;
+    let w = CFG.COMBO.windowMs + whaleLv('juice') * (whaleDef('juice').power);
     if (state.eventId === 'orange' && state.eventUntil > Date.now()) {
       const ev = eventDef();
       w += (ev && ev.comboBonus) || 180;
@@ -160,8 +194,16 @@
     return m;
   }
 
+  function whaleIncomeMult() {
+    return 1 + whaleLv('fang') * whaleDef('fang').power;
+  }
+
+  function iapMult() {
+    return state.iap.permMult ? 1 + CFG.IAP_PERMANENT_MULT : 1;
+  }
+
   function incomeMult() {
-    return prestigeMult() * nftMult() * eventMult() * boostMult();
+    return prestigeMult() * nftMult() * eventMult() * boostMult() * whaleIncomeMult() * iapMult();
   }
 
   function clickBase() {
@@ -220,7 +262,7 @@
     const fromClick = clickPower() * bag.clickTimes;
     const fromCps = Math.max(cps(), 0.5) * bag.secondsOfCps;
     const gap = Math.max(0, nextInterestingCost() - state.coins) * bag.nextUpgradeShare;
-    return Math.max(bag.min, Math.floor(Math.max(fromClick, fromCps, gap)));
+    return Math.max(bag.min, Math.floor(Math.max(fromClick, fromCps, gap) * rewardMult()));
   }
 
   function rank() {
@@ -238,6 +280,10 @@
     state.runEarned += amount;
     state.dayEarned += amount;
     state.weekEarned += amount;
+    if (state.eventId === 'marathon' && state.eventUntil > Date.now()) {
+      state.dayEarned += amount;
+      state.weekEarned += amount;
+    }
   }
 
   function snapshot() {
@@ -274,6 +320,18 @@
       eventUntil: state.eventUntil,
       maxCps: state.maxCps,
       adsTotal: state.adsTotal,
+      oranges: state.oranges,
+      ascensionCount: state.ascensionCount,
+      whale: Object.assign({}, state.whale),
+      achieved: Object.assign({}, state.achieved),
+      accUnlocked: Object.assign({}, state.accUnlocked),
+      accOn: Object.assign({}, state.accOn),
+      iap: Object.assign({}, state.iap),
+      lifetimeTaps: state.lifetimeTaps,
+      bestCombo: state.bestCombo,
+      lastMiniAt: state.lastMiniAt,
+      title: state.title,
+      seen: Object.assign({}, state.seen),
     };
   }
 
@@ -283,6 +341,7 @@
       'coins', 'totalEarned', 'runEarned', 'boostUntil', 'prestigePoints', 'prestigeCount',
       'streak', 'bestStreak', 'dayEarned', 'dayTaps', 'dayBuys', 'dayAds', 'dayMaxCombo',
       'questsDone', 'weekEarned', 'eventUntil', 'maxCps', 'adsTotal', 'lastSeen',
+      'oranges', 'ascensionCount', 'lifetimeTaps', 'bestCombo', 'lastMiniAt',
     ];
     nums.forEach((k) => {
       if (typeof data[k] === 'number' && isFinite(data[k])) state[k] = Math.max(0, data[k]);
@@ -307,12 +366,19 @@
     if (typeof data.runEarned !== 'number' && typeof data.coins === 'number') {
       state.runEarned = data.coins;
     }
+    if (data.whale && typeof data.whale === 'object') state.whale = Object.assign({}, data.whale);
+    if (data.achieved && typeof data.achieved === 'object') state.achieved = Object.assign({}, data.achieved);
+    if (data.accUnlocked && typeof data.accUnlocked === 'object') state.accUnlocked = Object.assign({}, data.accUnlocked);
+    if (data.accOn && typeof data.accOn === 'object') state.accOn = Object.assign({}, data.accOn);
+    if (data.iap && typeof data.iap === 'object') state.iap = Object.assign({ noAds: false, permMult: false, starter: false }, data.iap);
+    if (data.seen && typeof data.seen === 'object') state.seen = Object.assign({}, state.seen, data.seen);
+    if (typeof data.title === 'string') state.title = data.title;
   }
 
   function mergeBetter(a, b) {
     if (!a) return b;
     if (!b) return a;
-    const score = (p) => (p.prestigePoints || 0) * 1e15 + (p.totalEarned || 0) + (p.coins || 0) * 0.01;
+    const score = (p) => (p.ascensionCount || 0) * 1e18 + (p.prestigePoints || 0) * 1e15 + (p.oranges || 0) * 1e12 + (p.totalEarned || 0);
     return score(a) >= score(b) ? a : b;
   }
 
@@ -337,12 +403,15 @@
     const snap = snapshot();
     if (flush) SDK.flushCloud(snap);
     else SDK.saveCloud(snap);
+    SDK.setNoAds(!!state.iap.noAds);
     SDK.saveStats({
       coins: Math.floor(state.coins),
       totalEarned: Math.floor(state.totalEarned),
       prestigePoints: state.prestigePoints,
       maxCps: Math.floor(state.maxCps),
       streak: state.streak,
+      oranges: state.oranges,
+      ascensionCount: state.ascensionCount,
     });
   }
 
@@ -351,9 +420,10 @@
     const elapsed = Math.max(0, now - (fromTs || state.lastSeen || now));
     if (elapsed < CFG.OFFLINE.minMsToShow) return 0;
     const capped = Math.min(elapsed, CFG.OFFLINE.maxHours * 3600 * 1000);
-    const idle = rawCps() * prestigeMult() * nftMult();
+    const idle = rawCps() * prestigeMult() * nftMult() * whaleIncomeMult() * iapMult();
     if (idle <= 0) return 0;
-    return Math.floor((idle * (capped / 1000)) * CFG.OFFLINE.efficiency);
+    const eff = CFG.OFFLINE.efficiency + whaleLv('nap') * whaleDef('nap').power;
+    return Math.floor((idle * (capped / 1000)) * Math.min(0.95, eff));
   }
 
   /* ---------- prestige ---------- */
@@ -362,6 +432,7 @@
     const run = state.runEarned || 0;
     if (run < CFG.PRESTIGE.minRun) return 0;
     let pts = Math.max(1, Math.floor(Math.sqrt(run / CFG.PRESTIGE.unit)));
+    pts += whaleLv('tip') * whaleDef('tip').power;
     if (withAd) pts = Math.max(pts + 1, Math.floor(pts * (1 + CFG.PRESTIGE.adBonus)));
     return pts;
   }
@@ -380,15 +451,20 @@
     state.upgrades = defaultUpgrades();
     state.boostUntil = 0;
     state.combo = 0;
+    const nest = whaleLv('nest') * whaleDef('nest').power;
+    if (nest > 0) grant(nest * clickBase() * prestigeMult());
     prestigeArmed = false;
     refreshSkinUnlocks();
+    checkAchievements();
     playTone(280, 0.18, 'sawtooth');
     playTone(560, 0.2, 'sine');
+    SDK.vibrate(40);
+    shakeStage();
     toast(t('toastPrestige') + ' ' + formatMult(prestigeMult()));
     saveAll(true);
     pushLeaderboards(true);
     renderAll();
-    spawnBurst();
+    spawnBurst(18);
   }
 
   /* ---------- daily / streak ---------- */
@@ -457,7 +533,8 @@
 
   function dailyAmount() {
     const base = CFG.DAILY.rewards[dailyIndex()];
-    return Math.floor(base * prestigeMult() * Math.max(1, clickBase()));
+    const gift = 1 + whaleLv('gift') * whaleDef('gift').power;
+    return Math.floor(base * prestigeMult() * Math.max(1, clickBase()) * gift * rewardMult());
   }
 
   function dailyAlready() {
@@ -554,6 +631,17 @@
       if (u.type === 'prestige' && state.prestigeCount >= u.n) unlockSkin(s.id);
       if (u.type === 'quests' && state.questsDone >= u.n) unlockSkin(s.id);
       if (u.type === 'streak' && state.bestStreak >= u.n) unlockSkin(s.id);
+      if (u.type === 'achieve' && state.achieved[u.id]) unlockSkin(s.id);
+      if (u.type === 'event' && state.eventId === u.id && state.eventUntil > Date.now()) unlockSkin(s.id);
+    });
+    CFG.ACCESSORIES.forEach((a) => {
+      const u = a.unlock;
+      let ok = false;
+      if (u.type === 'prestige' && state.prestigeCount >= u.n) ok = true;
+      if (u.type === 'streak' && state.bestStreak >= u.n) ok = true;
+      if (u.type === 'oranges' && state.oranges >= u.n) ok = true;
+      if (u.type === 'achieve' && state.achieved[u.id]) ok = true;
+      if (ok) state.accUnlocked[a.id] = true;
     });
   }
 
@@ -567,7 +655,11 @@
 
   function applySkin() {
     const el = $('capy-hit');
-    if (el) el.setAttribute('data-skin', state.skin || 'classic');
+    if (!el) return;
+    el.setAttribute('data-skin', state.skin || 'classic');
+    CFG.ACCESSORIES.forEach((a) => {
+      el.setAttribute('data-acc-' + a.id, state.accOn[a.id] ? '1' : '0');
+    });
   }
 
   /* ---------- shop / tap ---------- */
@@ -582,7 +674,8 @@
     state.coins -= cost;
     state.upgrades[id] = (state.upgrades[id] || 0) + 1;
     state.purchasesSinceAd += 1;
-    state.dayBuys += 1;
+    state.dayBuys += (state.eventId === 'marathon' && state.eventUntil > Date.now()) ? 2 : 1;
+    unlockFeatures();
     playTone(520, 0.07, 'square');
     saveAll(false);
     renderAll();
@@ -602,13 +695,19 @@
     else state.combo = 1;
     state.lastTap = now;
     if (state.combo > state.dayMaxCombo) state.dayMaxCombo = state.combo;
-    state.dayTaps += 1;
+    if (state.combo > state.bestCombo) state.bestCombo = state.combo;
+    state.dayTaps += (state.eventId === 'marathon' && state.eventUntil > Date.now()) ? 2 : 1;
+    state.lifetimeTaps += 1;
     const amount = clickPower();
     grant(amount);
+    const fat = comboMult() >= 2;
     const label = (comboMult() > 1 ? 'x' + comboMult() + ' ' : '') + '+' + formatNum(amount);
-    spawnFloater(clientX, clientY, label);
+    spawnFloater(clientX, clientY, label, fat);
     squashCapy();
     playTap();
+    SDK.vibrate(comboMult() >= 3 ? 18 : 8);
+    if (comboMult() >= 2) spawnBurst(comboMult() >= 3 ? 10 : 5);
+    if (state.lifetimeTaps % 40 === 0) checkAchievements();
     renderHud();
   }
 
@@ -666,11 +765,11 @@
     el.classList.add('is-hit');
   }
 
-  function spawnFloater(x, y, text) {
+  function spawnFloater(x, y, text, fat) {
     const layer = $('float-layer');
     if (!layer) return;
     const node = document.createElement('div');
-    node.className = 'floater';
+    node.className = 'floater' + (fat ? ' is-fat' : '');
     node.textContent = text;
     const rect = layer.getBoundingClientRect();
     node.style.left = x - rect.left + (Math.random() * 24 - 12) + 'px';
@@ -679,10 +778,20 @@
     setTimeout(function () { node.remove(); }, 850);
   }
 
-  function spawnBurst() {
+  function shakeStage() {
     const stage = $('stage');
     if (!stage) return;
-    for (let i = 0; i < 6; i += 1) {
+    stage.classList.remove('is-shake');
+    void stage.offsetWidth;
+    stage.classList.add('is-shake');
+    setTimeout(function () { stage.classList.remove('is-shake'); }, 480);
+  }
+
+  function spawnBurst(n) {
+    const stage = $('stage');
+    if (!stage) return;
+    const count = n || 6;
+    for (let i = 0; i < count; i += 1) {
       const p = document.createElement('span');
       p.className = 'spark';
       p.style.setProperty('--dx', (Math.random() * 140 - 70) + 'px');
@@ -713,12 +822,213 @@
 
   /* ---------- render ---------- */
 
+  function skinsOwned() {
+    return Object.keys(state.unlockedSkins).filter((k) => state.unlockedSkins[k]).length;
+  }
+
+  function statValue(key) {
+    if (key === 'skinsOwned') return skinsOwned();
+    return state[key] || 0;
+  }
+
+  function checkAchievements() {
+    let changed = false;
+    CFG.ACHIEVEMENTS.forEach((a) => {
+      if (state.achieved[a.id]) return;
+      if (statValue(a.stat) < a.at) return;
+      state.achieved[a.id] = true;
+      changed = true;
+      if (a.reward) {
+        if (a.reward.oranges) state.oranges += a.reward.oranges;
+        if (a.reward.skin) unlockSkin(a.reward.skin);
+        if (a.reward.acc) state.accUnlocked[a.reward.acc] = true;
+        if (a.reward.title) state.title = a.reward.title;
+      }
+      toast(t('ach.' + a.id + '.name'));
+    });
+    if (changed) {
+      refreshSkinUnlocks();
+      saveAll(false);
+    }
+  }
+
+  function canAscend() {
+    return state.prestigeCount >= CFG.ASCENSION.minPrestiges && state.prestigePoints >= CFG.ASCENSION.minPoints;
+  }
+
+  function ascendGain(withAd) {
+    if (!canAscend()) return 0;
+    let n = Math.max(1, Math.floor(state.prestigePoints / CFG.ASCENSION.unit));
+    if (withAd) n = Math.max(n + 1, Math.floor(n * (1 + CFG.ASCENSION.adBonus)));
+    return n;
+  }
+
+  function doAscend(withAd) {
+    const gain = ascendGain(!!withAd);
+    if (!gain) return;
+    state.oranges += gain;
+    state.ascensionCount += 1;
+    state.prestigePoints = 0;
+    state.coins = 0;
+    state.runEarned = 0;
+    state.upgrades = defaultUpgrades();
+    state.boostUntil = 0;
+    state.combo = 0;
+    refreshSkinUnlocks();
+    checkAchievements();
+    playTone(180, 0.25, 'sawtooth');
+    playTone(720, 0.22, 'sine');
+    SDK.vibrate(55);
+    shakeStage();
+    toast(t('toastAscend') + ' +' + gain);
+    saveAll(true);
+    pushLeaderboards(true);
+    renderAll();
+    spawnBurst(22);
+  }
+
+  function buyWhale(id) {
+    const u = whaleDef(id);
+    if (!u || whaleLv(id) >= u.max) return;
+    const cost = whaleCost(id);
+    if (state.oranges < cost) {
+      toast(t('toastNeedMore'));
+      return;
+    }
+    state.oranges -= cost;
+    state.whale[id] = whaleLv(id) + 1;
+    saveAll(true);
+    renderAll();
+  }
+
+  function featureOpen(name) {
+    if (name === 'daily') return state.seen.daily || state.dayBuys >= CFG.ONBOARD.dailyAfterBuys || state.dailyClaimedOn;
+    if (name === 'quests') return state.seen.quests || state.dayBuys >= CFG.ONBOARD.questsAfterBuys || state.questsDone > 0;
+    if (name === 'skins') return state.seen.skins || state.prestigeCount >= CFG.ONBOARD.skinsAfterPrestige || skinsOwned() > 1;
+    if (name === 'album') return state.seen.album || state.questsDone >= CFG.ONBOARD.albumAfterQuests || Object.keys(state.achieved).length > 0;
+    return true;
+  }
+
+  function unlockFeatures() {
+    if (!state.seen.daily && featureOpen('daily')) {
+      state.seen.daily = true;
+      toast(t('dailyTitle'));
+    }
+    if (!state.seen.quests && featureOpen('quests')) {
+      state.seen.quests = true;
+      toast(t('questsTitle'));
+    }
+    if (!state.seen.skins && featureOpen('skins')) {
+      state.seen.skins = true;
+      toast(t('tabSkins'));
+    }
+    if (!state.seen.album && featureOpen('album')) {
+      state.seen.album = true;
+      toast(t('albumTitle'));
+    }
+    const dailyBtn = $('btn-daily');
+    if (dailyBtn) dailyBtn.hidden = !featureOpen('daily');
+    ['quests', 'skins', 'album'].forEach((id) => {
+      const el = $('tab-' + id);
+      if (el) el.hidden = !featureOpen(id);
+    });
+  }
+
+  function grantIap(kind) {
+    if (kind === 'noAds') {
+      state.iap.noAds = true;
+      SDK.setNoAds(true);
+    } else if (kind === 'permMult') {
+      state.iap.permMult = true;
+    } else if (kind === 'starter') {
+      state.iap.starter = true;
+      grant(Math.max(coinBagAmount() * 4, CFG.STARTER_PACK_CLICKS * clickPower()));
+      state.boostUntil = Date.now() + CFG.BOOST_DURATION_MS * 2;
+      unlockSkin('ghost');
+    }
+    saveAll(true);
+    renderAll();
+    toast(t('iapOwned'));
+  }
+
+  function buyIap(kind) {
+    const id = CFG.YANDEX.IAP[kind];
+    if (!id) return;
+    if (kind !== 'starter' && state.iap[kind]) return;
+    SDK.purchase(id)
+      .then(function (res) {
+        const token = res && (res.purchaseToken || (res.purchaseData && res.purchaseData.purchaseToken));
+        grantIap(kind);
+        if (kind === 'starter' && token) return SDK.consumePurchase(token);
+      })
+      .catch(function () {
+        toast(t('toastAdError'));
+      });
+  }
+
+  function restoreIap() {
+    SDK.getPurchases().then(function (list) {
+      (list || []).forEach(function (p) {
+        const id = p.productID || p.productId;
+        if (id === CFG.YANDEX.IAP.noAds) grantIap('noAds');
+        if (id === CFG.YANDEX.IAP.permMult) grantIap('permMult');
+        if (id === CFG.YANDEX.IAP.starter && p.purchaseToken) {
+          SDK.consumePurchase(p.purchaseToken).then(function () {
+            if (!state.iap.starter) grantIap('starter');
+          });
+        }
+      });
+    });
+  }
+
+  let miniArmed = false;
+  function miniFreeReady() {
+    return Date.now() - (state.lastMiniAt || 0) >= CFG.MINIGAME.cooldownMs;
+  }
+
+  function startMini(fromAd) {
+    if (!fromAd && !miniFreeReady()) return;
+    miniArmed = true;
+    showModal('mini');
+    const marker = $('mini-marker');
+    if (marker) {
+      marker.classList.remove('is-run');
+      void marker.offsetWidth;
+      marker.classList.add('is-run');
+    }
+    if ($('btn-mini-throw')) $('btn-mini-throw').disabled = false;
+  }
+
+  function throwMini() {
+    if (!miniArmed) return;
+    miniArmed = false;
+    const marker = $('mini-marker');
+    const track = $('mini-track');
+    if (!marker || !track) return;
+    marker.classList.remove('is-run');
+    const left = marker.offsetLeft;
+    const width = track.clientWidth || 1;
+    const pct = left / width;
+    const hit = pct >= 0.40 && pct <= 0.60;
+    const amount = Math.floor((hit ? coinBagAmount() * 1.4 : coinBagAmount() * 0.25) * rewardMult());
+    grant(amount);
+    state.lastMiniAt = Date.now();
+    hideModal('mini');
+    toast(hit ? t('miniHit', { n: formatNum(amount) }) : t('miniMiss', { n: formatNum(amount) }));
+    if (hit) spawnBurst(12);
+    saveAll(true);
+    renderHud();
+  }
+
   function renderHud() {
     if ($('hud-coins')) $('hud-coins').textContent = formatNum(state.coins);
     if ($('hud-cps')) $('hud-cps').textContent = formatNum(cps()) + ' ' + t('perSec');
     if ($('hud-tap')) $('hud-tap').textContent = formatNum(clickPower()) + ' ' + t('perTap');
-    if ($('hud-rank')) $('hud-rank').textContent = t('ranks.' + rank().id);
-    if ($('hud-mult')) $('hud-mult').textContent = formatMult(prestigeMult() * nftMult());
+    if ($('hud-rank')) {
+      const title = state.title ? t('titles.' + state.title) + ' · ' : '';
+      $('hud-rank').textContent = title + t('ranks.' + rank().id);
+    }
+    if ($('hud-mult')) $('hud-mult').textContent = formatMult(prestigeMult() * nftMult() * whaleIncomeMult() * iapMult());
     renderBoost();
     renderCombo();
     renderEvent();
@@ -769,9 +1079,11 @@
     }
     const left = Math.max(0, state.eventUntil - Date.now());
     const mins = Math.ceil(left / 60000);
-    const text = state.eventId === 'bull'
-      ? t('eventBull', { n: String(eventMult()) })
-      : t('eventOrange');
+    let text = t('eventOrange');
+    if (state.eventId === 'bull') text = t('eventBull', { n: String(eventMult()) });
+    if (state.eventId === 'bear') text = t('eventBear', { n: String(eventMult()) });
+    if (state.eventId === 'marathon') text = t('eventMarathon');
+    if (state.eventId === 'festival') text = t('skins.festival.name');
     el.hidden = false;
     el.textContent = text + ' · ' + t('eventLeft', { n: mins + 'м' });
   }
@@ -845,6 +1157,50 @@
         '<button type="button" class="primary" id="btn-prestige"' + (gain ? '' : ' disabled') + '>' + t('prestigeDo') + '</button>' +
         '<button type="button" class="secondary" id="btn-prestige-ad"' + (gain ? '' : ' disabled') + '>' + t('prestigeAd') + '</button>' +
       '</div>';
+
+    const ag = ascendGain(false);
+    el.innerHTML +=
+      '<h3 style="margin-top:12px">' + t('ascendTitle') + ' · ' + t('oranges') + ' ' + state.oranges + '</h3>' +
+      '<p>' + t('ascendHint') + ' ' +
+        (ag ? t('ascendGain', { n: ag }) : t('ascendNeed', { n: CFG.ASCENSION.minPrestiges })) +
+      '</p>' +
+      '<div class="prestige-actions">' +
+        '<button type="button" class="primary" id="btn-ascend"' + (ag ? '' : ' disabled') + '>' + t('ascendDo') + '</button>' +
+        '<button type="button" class="secondary" id="btn-ascend-ad"' + (ag ? '' : ' disabled') + '>' + t('ascendAd') + '</button>' +
+      '</div>';
+
+    if (state.ascensionCount > 0 || state.oranges > 0) {
+      el.innerHTML += '<h3 style="margin-top:12px">' + t('whaleTitle') + '</h3>';
+      CFG.WHALE.forEach((w) => {
+        const lv = whaleLv(w.id);
+        const cost = whaleCost(w.id);
+        const maxed = lv >= w.max;
+        el.innerHTML +=
+          '<article class="upg" style="margin-top:6px">' +
+            '<div class="upg-body"><h3>' + t('whale.' + w.id + '.name') + '</h3>' +
+            '<p>' + t('whale.' + w.id + '.desc') + ' · ' + t('level') + ' ' + lv + '</p></div>' +
+            '<button type="button" class="btn-buy" data-whale="' + w.id + '"' + (maxed || state.oranges < cost ? ' disabled' : '') + '>' +
+              '<span>' + (maxed ? 'MAX' : t('buy')) + '</span><b>' + (maxed ? '' : cost + ' 🍊') + '</b>' +
+            '</button>' +
+          '</article>';
+      });
+    }
+
+    el.innerHTML += '<h3 style="margin-top:12px">' + t('iapTitle') + '</h3>';
+    [
+      ['noAds', 'iapNoAds'],
+      ['permMult', 'iapMult'],
+      ['starter', 'iapStarter'],
+    ].forEach((pair) => {
+      const owned = pair[0] !== 'starter' && state.iap[pair[0]];
+      el.innerHTML +=
+        '<article class="upg" style="margin-top:6px">' +
+          '<div class="upg-body"><h3>' + t(pair[1]) + '</h3></div>' +
+          '<button type="button" class="btn-buy" data-iap="' + pair[0] + '"' + (owned ? ' disabled' : '') + '>' +
+            '<span>' + (owned ? t('iapOwned') : t('iapBuy')) + '</span>' +
+          '</button>' +
+        '</article>';
+    });
   }
 
   function renderQuests() {
@@ -898,6 +1254,43 @@
         '</article>'
       );
     }).join('');
+    list.innerHTML += '<div class="branch-label">' + t('tabSkins') + '</div>';
+    list.innerHTML += CFG.ACCESSORIES.map((a) => {
+      const open = !!state.accUnlocked[a.id];
+      const on = !!state.accOn[a.id];
+      const btn = open
+        ? '<button type="button" class="btn-buy" data-acc="' + a.id + '"><span>' + (on ? t('hideAcc') : t('wearAcc')) + '</span></button>'
+        : '<button type="button" class="btn-buy" disabled><span>' + t('locked') + '</span></button>';
+      return (
+        '<article class="skin-card">' +
+          '<div class="upg-ico" data-ico="tap"></div>' +
+          '<div class="upg-body"><h3>' + t('acc.' + a.id + '.name') + '</h3><p>' + t('acc.' + a.id + '.desc') + '</p></div>' +
+          btn +
+        '</article>'
+      );
+    }).join('');
+  }
+
+  function renderAlbum() {
+    const list = $('album-list');
+    if (!list) return;
+    const done = CFG.ACHIEVEMENTS.filter((a) => state.achieved[a.id]).length;
+    list.innerHTML = '<div class="branch-label">' + t('albumTitle') + ' ' + done + '/' + CFG.ACHIEVEMENTS.length + '</div>' +
+      CFG.ACHIEVEMENTS.map((a) => {
+        const got = !!state.achieved[a.id];
+        const prog = Math.min(statValue(a.stat), a.at);
+        const pct = Math.min(100, Math.floor((prog / a.at) * 100));
+        return (
+          '<article class="quest-card' + (got ? ' is-can' : '') + '">' +
+            '<div class="upg-ico" data-ico="nft"></div>' +
+            '<div class="upg-body">' +
+              '<h3>' + t('ach.' + a.id + '.name') + '</h3>' +
+              '<p>' + t('ach.' + a.id + '.desc') + ' · ' + formatNum(prog) + '/' + formatNum(a.at) + '</p>' +
+              '<div class="quest-bar"><i style="width:' + pct + '%"></i></div>' +
+            '</div>' +
+          '</article>'
+        );
+      }).join('');
   }
 
   function renderLb(board) {
@@ -956,7 +1349,7 @@
     document.querySelectorAll('#hub-tabs .tab').forEach((btn) => {
       btn.classList.toggle('is-on', btn.getAttribute('data-tab') === name);
     });
-    const map = { shop: 'shop-list', quests: 'quest-list', skins: 'skin-list', lb: 'lb-panel' };
+    const map = { shop: 'shop-list', quests: 'quest-list', skins: 'skin-list', album: 'album-list', lb: 'lb-panel' };
     Object.keys(map).forEach((k) => {
       const el = $(map[k]);
       if (el) el.hidden = k !== name;
@@ -964,6 +1357,7 @@
     if (name === 'shop') renderShop();
     if (name === 'quests') renderQuests();
     if (name === 'skins') renderSkins();
+    if (name === 'album') renderAlbum();
     if (name === 'lb') renderLb('earned');
   }
 
@@ -1006,7 +1400,12 @@
       'tab-shop': 'tabShop',
       'tab-quests': 'tabQuests',
       'tab-skins': 'tabSkins',
+      'tab-album': 'tabAlbum',
       'tab-lb': 'tabTop',
+      'txt-mini-title': 'miniTitle',
+      'txt-mini-hint': 'miniHint',
+      'btn-mini-throw': 'miniGo',
+      'btn-mini-ad': 'miniAd',
       'txt-daily-title': 'dailyTitle',
       'txt-daily-sub': 'dailySub',
       'btn-daily-claim': 'dailyClaim',
@@ -1028,9 +1427,12 @@
     if (state.tab === 'shop') renderShop();
     else if (state.tab === 'quests') renderQuests();
     else if (state.tab === 'skins') renderSkins();
+    else if (state.tab === 'album') renderAlbum();
     else renderPrestigeCard();
     applySkin();
     refreshSkinUnlocks();
+    unlockFeatures();
+    checkAchievements();
   }
 
   /* ---------- panels / ads ---------- */
@@ -1060,7 +1462,8 @@
     const el = $(id);
     if (el) el.classList.remove('is-on');
     if (!$('offline').classList.contains('is-on') && !$('howto').classList.contains('is-on') &&
-        !$('daily').classList.contains('is-on') && !$('restore').classList.contains('is-on')) {
+        !$('daily').classList.contains('is-on') && !$('restore').classList.contains('is-on') &&
+        !($('mini') && $('mini').classList.contains('is-on'))) {
       SDK.gameplayStart();
     }
   }
@@ -1138,6 +1541,12 @@
       return;
     } else if (type === 'prestige_ad') {
       doPrestige(true);
+      return;
+    } else if (type === 'ascend_ad') {
+      doAscend(true);
+      return;
+    } else if (type === 'mini_ad') {
+      startMini(true);
       return;
     } else if (type === 'skin_ghost') {
       unlockSkin('ghost');
@@ -1257,6 +1666,13 @@
     $('btn-daily-x2').addEventListener('click', function () { requestReward('daily_x2'); });
     $('btn-restore').addEventListener('click', function () { requestReward('streak_restore'); });
     $('btn-restore-skip').addEventListener('click', function () { skipRestore(); });
+    $('btn-mini').addEventListener('click', function () {
+      if (miniFreeReady()) startMini(false);
+      else requestReward('mini_ad');
+    });
+    $('btn-mini-throw').addEventListener('click', function () { throwMini(); });
+    $('btn-mini-ad').addEventListener('click', function () { requestReward('mini_ad'); });
+
     $('btn-rebirth-chip').addEventListener('click', function () {
       setShop(true);
       setTab('shop');
@@ -1264,7 +1680,7 @@
       if (card) card.scrollIntoView({ block: 'nearest' });
     });
 
-    ['daily', 'restore', 'howto'].forEach(function (id) {
+    ['daily', 'restore', 'howto', 'mini'].forEach(function (id) {
       const el = $(id);
       if (!el) return;
       el.addEventListener('click', function (e) {
@@ -1288,6 +1704,21 @@
       if (wear) { wearSkin(wear.getAttribute('data-wear')); return; }
       const skinAd = e.target.closest('[data-skin-ad]');
       if (skinAd) { requestReward('skin_ghost'); return; }
+      const acc = e.target.closest('[data-acc]');
+      if (acc) {
+        const id = acc.getAttribute('data-acc');
+        if (state.accUnlocked[id]) {
+          state.accOn[id] = !state.accOn[id];
+          applySkin();
+          saveAll(false);
+          renderSkins();
+        }
+        return;
+      }
+      const whale = e.target.closest('[data-whale]');
+      if (whale) { buyWhale(whale.getAttribute('data-whale')); return; }
+      const iap = e.target.closest('[data-iap]');
+      if (iap) { buyIap(iap.getAttribute('data-iap')); return; }
       const lb = e.target.closest('[data-lb]');
       if (lb) { renderLb(lb.getAttribute('data-lb')); return; }
       if (e.target.id === 'btn-prestige') {
@@ -1305,6 +1736,18 @@
         return;
       }
       if (e.target.id === 'btn-prestige-ad') requestReward('prestige_ad');
+      if (e.target.id === 'btn-ascend') {
+        if (!canAscend()) return;
+        if (!e.target.dataset.arm) {
+          e.target.dataset.arm = '1';
+          e.target.textContent = t('ascendConfirm').slice(0, 18) + '…';
+          setTimeout(function () { renderPrestigeCard(); }, 2500);
+          return;
+        }
+        doAscend(false);
+        return;
+      }
+      if (e.target.id === 'btn-ascend-ad') requestReward('ascend_ad');
       if (e.target.id === 'btn-login') {
         SDK.openAuth()
           .then(function () {
@@ -1341,6 +1784,10 @@
         rollCalendar();
         refreshSkinUnlocks();
         applySkin();
+        SDK.setNoAds(!!state.iap.noAds);
+        restoreIap();
+        unlockFeatures();
+        checkAchievements();
 
         const offline = calcOffline(best && best.lastSeen);
         saveLocal();

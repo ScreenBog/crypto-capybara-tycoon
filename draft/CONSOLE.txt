@@ -37,4 +37,9 @@ Tap a capybara, mine CapyCoins and build farms, staking pools and NFTs. Tap in a
   cct_cps       — максимальный CPS
   cct_prestige  — число ребиртов
 
-Версия: 1.1.0
+Инапы (создать в Консоли, id один в один):
+  cct_no_ads     — отключить fullscreen
+  cct_perm_mult  — вечный +8%
+  cct_starter    — расходник: коины + буст + скин
+
+Версия: 1.2.0

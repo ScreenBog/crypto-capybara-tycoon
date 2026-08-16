@@ -65,6 +65,12 @@
             <path d="M17 9l5 6M22 9l-5 6"/>
           </svg>
         </button>
+        <button type="button" class="icon-btn" id="btn-mini" title="Апельсин">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="13" r="7"/>
+            <path d="M12 6c2-3 5-2 5 0"/>
+          </svg>
+        </button>
         <button type="button" class="icon-btn" id="btn-how" title="Как играть">
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <circle cx="12" cy="12" r="9"/>
@@ -195,6 +201,17 @@
             <circle cx="178" cy="118" r="3" fill="#7eecc0"/>
             <path d="M70 200h140" stroke="#7eecc0" stroke-width="2" opacity="0.5"/>
           </g>
+          <g class="acc acc-hat" display="none">
+            <ellipse cx="140" cy="72" rx="52" ry="10" fill="#6b8f3a"/>
+            <rect x="112" y="46" width="56" height="28" rx="10" fill="#7aa344"/>
+          </g>
+          <g class="acc acc-leaf" display="none">
+            <ellipse cx="196" cy="92" rx="16" ry="8" fill="#6b8f3a" transform="rotate(-30 196 92)"/>
+          </g>
+          <g class="acc acc-bow" display="none">
+            <path d="M86 96l-16-8 16-4zM86 96l-16 12 18-2z" fill="#e07a5f"/>
+            <circle cx="86" cy="96" r="4" fill="#c45c42"/>
+          </g>
         </svg>
       </button>
 
@@ -227,11 +244,13 @@
         <button type="button" class="tab is-on" data-tab="shop" id="tab-shop">Ферма</button>
         <button type="button" class="tab" data-tab="quests" id="tab-quests">Квесты</button>
         <button type="button" class="tab" data-tab="skins" id="tab-skins">Образы</button>
+        <button type="button" class="tab" data-tab="album" id="tab-album">Альбом</button>
         <button type="button" class="tab" data-tab="lb" id="tab-lb">Топ</button>
       </div>
       <div id="shop-list" class="hub-pane"></div>
       <div id="quest-list" class="hub-pane" hidden></div>
       <div id="skin-list" class="hub-pane" hidden></div>
+      <div id="album-list" class="hub-pane" hidden></div>
       <div id="lb-panel" class="hub-pane" hidden></div>
       <div id="prestige-card"></div>
     </aside>
@@ -267,6 +286,21 @@
       <div class="row">
         <button type="button" class="primary" id="btn-daily-claim">Забрать</button>
         <button type="button" class="secondary" id="btn-daily-x2">Забрать x2 за рекламу</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal" id="mini">
+    <div class="modal-card">
+      <h2 id="txt-mini-title">Брось апельсин</h2>
+      <p id="txt-mini-hint">Тапни, когда маркер в зелёной зоне</p>
+      <div class="mini-track" id="mini-track">
+        <div class="mini-zone"></div>
+        <div class="mini-marker" id="mini-marker"></div>
+      </div>
+      <div class="row">
+        <button type="button" class="primary" id="btn-mini-throw">Бросить</button>
+        <button type="button" class="secondary" id="btn-mini-ad">Сыграть за рекламу</button>
       </div>
     </div>
   </div>

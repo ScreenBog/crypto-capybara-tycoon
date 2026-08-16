@@ -14,6 +14,15 @@ window.CCT_CONFIG = {
     LB_EARNED: 'cct_earned',
     LB_CPS: 'cct_cps',
     LB_PRESTIGE: 'cct_prestige',
+    /**
+     * Инапы — создай в Консоли → «Инап-покупки».
+     * id должен совпадать один в один.
+     */
+    IAP: {
+      noAds: 'cct_no_ads',
+      permMult: 'cct_perm_mult',
+      starter: 'cct_starter',
+    },
   },
 
   INTERSTITIAL_COOLDOWN_MS: 3 * 60 * 1000,
@@ -59,7 +68,67 @@ window.CCT_CONFIG = {
       { at: 6, mult: 1.5 },
       { at: 16, mult: 2 },
       { at: 32, mult: 3 },
+      { at: 56, mult: 4 },
     ],
+  },
+
+  /**
+   * Асценсия / китовый уровень.
+   * Открывается после N ребиртов. Сжигает очки ребирта и фермы,
+   * выдаёт апельсины — вечную валюту кита.
+   */
+  ASCENSION: {
+    minPrestiges: 8,
+    minPoints: 12,
+    unit: 4,
+    adBonus: 0.3,
+  },
+
+  WHALE: [
+    { id: 'fang', max: 20, base: 1, costMult: 1.35, power: 0.03 },
+    { id: 'nest', max: 10, base: 2, costMult: 1.4, power: 40 },
+    { id: 'nap', max: 8, base: 2, costMult: 1.45, power: 0.04 },
+    { id: 'juice', max: 6, base: 3, costMult: 1.5, power: 40 },
+    { id: 'gift', max: 5, base: 3, costMult: 1.55, power: 0.15 },
+    { id: 'tip', max: 5, base: 4, costMult: 1.6, power: 1 },
+  ],
+
+  ACCESSORIES: [
+    { id: 'glasses', unlock: { type: 'achieve', id: 'earn100k' } },
+    { id: 'hat', unlock: { type: 'achieve', id: 'ads15' } },
+    { id: 'chain', unlock: { type: 'prestige', n: 2 } },
+    { id: 'leaf', unlock: { type: 'oranges', n: 3 } },
+    { id: 'bow', unlock: { type: 'streak', n: 3 } },
+  ],
+
+  ACHIEVEMENTS: [
+    { id: 'taps500', stat: 'lifetimeTaps', at: 500, reward: { title: 'tapper' } },
+    { id: 'taps5k', stat: 'lifetimeTaps', at: 5000, reward: { oranges: 1 } },
+    { id: 'earn100k', stat: 'totalEarned', at: 100000, reward: { acc: 'glasses' } },
+    { id: 'earn10m', stat: 'totalEarned', at: 1e7, reward: { skin: 'sunset' } },
+    { id: 'prestige3', stat: 'prestigeCount', at: 3, reward: { title: 'reborn' } },
+    { id: 'prestige12', stat: 'prestigeCount', at: 12, reward: { oranges: 2 } },
+    { id: 'streak7', stat: 'bestStreak', at: 7, reward: { skin: 'king' } },
+    { id: 'ads15', stat: 'adsTotal', at: 15, reward: { acc: 'hat' } },
+    { id: 'combo32', stat: 'bestCombo', at: 32, reward: { title: 'rhythm' } },
+    { id: 'quests12', stat: 'questsDone', at: 12, reward: { skin: 'mint' } },
+    { id: 'ascend1', stat: 'ascensionCount', at: 1, reward: { skin: 'whale' } },
+    { id: 'skins6', stat: 'skinsOwned', at: 6, reward: { oranges: 1 } },
+  ],
+
+  MINIGAME: {
+    cooldownMs: 3 * 60 * 60 * 1000,
+    windowMs: 12000,
+  },
+
+  IAP_PERMANENT_MULT: 0.08,
+  STARTER_PACK_CLICKS: 400,
+
+  ONBOARD: {
+    dailyAfterBuys: 1,
+    questsAfterBuys: 3,
+    skinsAfterPrestige: 1,
+    albumAfterQuests: 1,
   },
 
   /**
@@ -93,6 +162,10 @@ window.CCT_CONFIG = {
     { id: 'cyber', unlock: { type: 'quests', n: 8 } },
     { id: 'king', unlock: { type: 'streak', n: 7 } },
     { id: 'ghost', unlock: { type: 'ad' } },
+    { id: 'sunset', unlock: { type: 'achieve', id: 'earn10m' } },
+    { id: 'mint', unlock: { type: 'achieve', id: 'quests12' } },
+    { id: 'whale', unlock: { type: 'achieve', id: 'ascend1' } },
+    { id: 'festival', unlock: { type: 'event', id: 'festival' } },
   ],
 
   /**
@@ -125,7 +198,10 @@ window.CCT_CONFIG = {
    */
   EVENTS: {
     0: { id: 'bull', mult: 2.5, minutes: 90 },
+    1: { id: 'bear', mult: 0.75, rewardMult: 2.2, minutes: 90 },
     3: { id: 'orange', comboBonus: 180, minutes: 90 },
+    4: { id: 'festival', minutes: 90 },
+    5: { id: 'marathon', minutes: 120 },
     6: { id: 'bull', mult: 2.5, minutes: 90 },
   },
 };
