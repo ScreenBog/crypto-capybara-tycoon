@@ -41,5 +41,6 @@ Tap a capybara, mine CapyCoins and build farms, staking pools and NFTs. Tap in a
   cct_no_ads     — отключить fullscreen
   cct_perm_mult  — вечный +8%
   cct_starter    — расходник: коины + буст + скин
+  cct_pass       — премиум сезонного трека (нерасходный)
 
-Версия: 1.2.0
+Версия: 1.3.0

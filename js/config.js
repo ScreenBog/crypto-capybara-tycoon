@@ -22,6 +22,7 @@ window.CCT_CONFIG = {
       noAds: 'cct_no_ads',
       permMult: 'cct_perm_mult',
       starter: 'cct_starter',
+      pass: 'cct_pass',
     },
   },
 
@@ -169,15 +170,69 @@ window.CCT_CONFIG = {
   ],
 
   /**
-   * Квесты дня. targetFn(ctx) считает цель под текущий прогресс.
-   * Каждый день берём 3 штуки по сиду даты.
+   * LiveOps-сезон. Меняй id/start/days — баттл-пасс и сезонные награды
+   * крутятся сами, без правок game.js.
    */
+  SEASON: {
+    id: 's1_orange',
+    start: '2026-08-01',
+    days: 21,
+    skin: 'festival',
+    acc: 'leaf',
+  },
+
+  BATTLE_PASS: {
+    premiumOranges: 8,
+    xp: { quest: 12, daily: 8, sprint: 20, mini: 6, comeback: 10 },
+    /** xp — порог от старта сезона; free/prem: coins(доля мешка), oranges, boost, skin, acc */
+    tiers: [
+      { xp: 0, free: { coins: 0.4 }, prem: { oranges: 1 } },
+      { xp: 15, free: { coins: 0.5 }, prem: { boost: 1 } },
+      { xp: 35, free: { coins: 0.6 }, prem: { coins: 1.2 } },
+      { xp: 55, free: { oranges: 0 }, prem: { oranges: 1 } },
+      { xp: 80, free: { coins: 0.8 }, prem: { acc: 'bow' } },
+      { xp: 110, free: { coins: 0.9 }, prem: { coins: 1.6 } },
+      { xp: 145, free: { boost: 1 }, prem: { oranges: 1 } },
+      { xp: 180, free: { coins: 1 }, prem: { coins: 2 } },
+      { xp: 220, free: { coins: 1.1 }, prem: { skin: 'festival' } },
+      { xp: 265, free: { oranges: 1 }, prem: { oranges: 2 } },
+      { xp: 315, free: { coins: 1.2 }, prem: { boost: 1 } },
+      { xp: 370, free: { coins: 1.3 }, prem: { coins: 2.2 } },
+      { xp: 430, free: { coins: 1.4 }, prem: { oranges: 2 } },
+      { xp: 500, free: { boost: 1 }, prem: { acc: 'leaf' } },
+      { xp: 580, free: { coins: 1.6 }, prem: { coins: 2.5 } },
+      { xp: 670, free: { oranges: 1 }, prem: { oranges: 2 } },
+      { xp: 770, free: { coins: 1.8 }, prem: { boost: 1 } },
+      { xp: 880, free: { coins: 2 }, prem: { coins: 3 } },
+      { xp: 1000, free: { oranges: 1 }, prem: { oranges: 3 } },
+      { xp: 1140, free: { coins: 2.2 }, prem: { coins: 3.5 } },
+      { xp: 1300, free: { skin: 'festival' }, prem: { oranges: 4 } },
+    ],
+  },
+
+  RETURN: {
+    minMs: 90 * 60 * 1000,
+    bagMult: 2.2,
+  },
+
+  SPRINT: {
+    windowMs: 3 * 60 * 60 * 1000,
+    need: 3,
+  },
+
+  /**
+   * Квесты дня. weight: light / mid / heavy.
+   * Каждый день: 2 лёгких + 2 средних + 1 жирный.
+   */
+  QUEST_PICK: { light: 2, mid: 2, heavy: 1 },
   QUEST_POOL: [
-    { id: 'earn', stat: 'dayEarned', base: 4000 },
-    { id: 'taps', stat: 'dayTaps', base: 180 },
-    { id: 'buys', stat: 'dayBuys', base: 3 },
-    { id: 'ads', stat: 'dayAds', base: 2 },
-    { id: 'combo', stat: 'dayMaxCombo', base: 16 },
+    { id: 'taps', stat: 'dayTaps', base: 120, weight: 'light' },
+    { id: 'buys', stat: 'dayBuys', base: 2, weight: 'light' },
+    { id: 'ads', stat: 'dayAds', base: 2, weight: 'mid' },
+    { id: 'combo', stat: 'dayMaxCombo', base: 16, weight: 'mid' },
+    { id: 'earn', stat: 'dayEarned', base: 4000, weight: 'mid' },
+    { id: 'tapsFat', stat: 'dayTaps', base: 420, weight: 'heavy' },
+    { id: 'earnFat', stat: 'dayEarned', base: 18000, weight: 'heavy' },
   ],
 
   WEEKLY: { id: 'weekEarn', stat: 'weekEarned', base: 250000 },

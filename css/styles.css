@@ -807,7 +807,8 @@ header.top {
   font-weight: 800;
 }
 
-#event-banner {
+#event-banner,
+#sprint-banner {
   margin-top: 8px;
   padding: 6px 10px;
   border-radius: 12px;
@@ -816,6 +817,120 @@ header.top {
   font-size: 12px;
   font-weight: 700;
   color: var(--mint);
+}
+
+#sprint-banner {
+  background: linear-gradient(90deg, rgba(245, 199, 107, 0.18), rgba(240, 160, 122, 0.12));
+  border-color: rgba(245, 199, 107, 0.35);
+  color: var(--gold-2);
+  cursor: pointer;
+}
+
+#fx-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 4;
+}
+
+.confetti {
+  position: absolute;
+  width: 8px;
+  height: 10px;
+  border-radius: 2px;
+  top: 40%;
+  left: 50%;
+  animation: confetti 0.9s ease-out forwards;
+}
+
+@keyframes confetti {
+  to {
+    transform: translate(var(--cx), var(--cy)) rotate(220deg);
+    opacity: 0;
+  }
+}
+
+.quest-bar > i {
+  transition: width 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.quest-card.is-pop,
+.skin-card.is-pop {
+  animation: cardpop 0.45s ease;
+}
+
+@keyframes cardpop {
+  0% { transform: scale(0.96); }
+  50% { transform: scale(1.03); }
+  100% { transform: scale(1); }
+}
+
+.pass-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.pass-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pass-row {
+  display: grid;
+  grid-template-columns: 36px 1fr 1fr;
+  gap: 6px;
+  align-items: stretch;
+}
+
+.pass-idx {
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--muted);
+}
+
+.pass-cell {
+  border: 1px solid var(--stroke);
+  border-radius: 12px;
+  padding: 6px 8px;
+  font-size: 11px;
+  min-height: 44px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.pass-cell.is-ready {
+  border-color: rgba(245, 199, 107, 0.5);
+  background: rgba(245, 199, 107, 0.12);
+  cursor: pointer;
+}
+
+.pass-cell.is-done {
+  opacity: 0.55;
+}
+
+.pass-cell.is-lock {
+  opacity: 0.4;
+}
+
+#stage.is-wow::after {
+  content: "";
+  position: absolute;
+  inset: 10% 18%;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(245, 199, 107, 0.28), transparent 65%);
+  animation: wow 0.7s ease-out forwards;
+  pointer-events: none;
+}
+
+@keyframes wow {
+  from { transform: scale(0.4); opacity: 1; }
+  to { transform: scale(1.4); opacity: 0; }
 }
 
 #combo {

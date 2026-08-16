@@ -58,6 +58,16 @@
     lastMiniAt: 0,
     title: '',
     seen: { daily: false, quests: false, skins: false, album: false },
+    bpSeasonId: '',
+    bpXp: 0,
+    bpPremium: false,
+    bpFree: [],
+    bpPrem: [],
+    comebackOn: '',
+    pendingComeback: false,
+    sprintUntil: 0,
+    sprintCount: 0,
+    sprintClaimed: false,
   };
 
   let lastTick = 0;
@@ -332,6 +342,15 @@
       lastMiniAt: state.lastMiniAt,
       title: state.title,
       seen: Object.assign({}, state.seen),
+      bpSeasonId: state.bpSeasonId,
+      bpXp: state.bpXp,
+      bpPremium: state.bpPremium,
+      bpFree: state.bpFree.slice(),
+      bpPrem: state.bpPrem.slice(),
+      comebackOn: state.comebackOn,
+      sprintUntil: state.sprintUntil,
+      sprintCount: state.sprintCount,
+      sprintClaimed: state.sprintClaimed,
     };
   }
 
@@ -342,6 +361,7 @@
       'streak', 'bestStreak', 'dayEarned', 'dayTaps', 'dayBuys', 'dayAds', 'dayMaxCombo',
       'questsDone', 'weekEarned', 'eventUntil', 'maxCps', 'adsTotal', 'lastSeen',
       'oranges', 'ascensionCount', 'lifetimeTaps', 'bestCombo', 'lastMiniAt',
+      'bpXp', 'sprintUntil', 'sprintCount',
     ];
     nums.forEach((k) => {
       if (typeof data[k] === 'number' && isFinite(data[k])) state[k] = Math.max(0, data[k]);
@@ -373,6 +393,12 @@
     if (data.iap && typeof data.iap === 'object') state.iap = Object.assign({ noAds: false, permMult: false, starter: false }, data.iap);
     if (data.seen && typeof data.seen === 'object') state.seen = Object.assign({}, state.seen, data.seen);
     if (typeof data.title === 'string') state.title = data.title;
+    if (typeof data.bpSeasonId === 'string') state.bpSeasonId = data.bpSeasonId;
+    if (typeof data.comebackOn === 'string') state.comebackOn = data.comebackOn;
+    if (typeof data.bpPremium === 'boolean') state.bpPremium = data.bpPremium;
+    if (typeof data.sprintClaimed === 'boolean') state.sprintClaimed = data.sprintClaimed;
+    if (Array.isArray(data.bpFree)) state.bpFree = data.bpFree.slice();
+    if (Array.isArray(data.bpPrem)) state.bpPrem = data.bpPrem.slice();
   }
 
   function mergeBetter(a, b) {
@@ -460,6 +486,7 @@
     playTone(560, 0.2, 'sine');
     SDK.vibrate(40);
     shakeStage();
+    celebrate('prestige');
     toast(t('toastPrestige') + ' ' + formatMult(prestigeMult()));
     saveAll(true);
     pushLeaderboards(true);
@@ -478,13 +505,168 @@
         return (h >>> 0) / 4294967296;
       };
     })(seed);
-    const pool = CFG.QUEST_POOL.slice();
+    const pick = CFG.QUEST_PICK || { light: 2, mid: 2, heavy: 1 };
     const out = [];
-    while (out.length < 3 && pool.length) {
-      const i = Math.floor(rnd() * pool.length);
-      out.push(pool.splice(i, 1)[0].id);
-    }
+    ['light', 'mid', 'heavy'].forEach((w) => {
+      const pool = CFG.QUEST_POOL.filter((q) => q.weight === w && out.indexOf(q.id) < 0);
+      let n = pick[w] || 0;
+      while (n > 0 && pool.length) {
+        const i = Math.floor(rnd() * pool.length);
+        out.push(pool.splice(i, 1)[0].id);
+        n -= 1;
+      }
+    });
     return out;
+  }
+
+  function seasonCfg() {
+    return CFG.SEASON || { id: 's1', start: todayStr(), days: 21 };
+  }
+
+  function seasonDayIndex() {
+    const s = seasonCfg();
+    const n = daysBetween(s.start, todayStr());
+    if (n < 0) return 0;
+    return Math.min(s.days - 1, n);
+  }
+
+  function ensureSeason() {
+    const id = seasonCfg().id;
+    if (state.bpSeasonId !== id) {
+      state.bpSeasonId = id;
+      state.bpXp = 0;
+      state.bpPremium = false;
+      state.bpFree = [];
+      state.bpPrem = [];
+    }
+  }
+
+  function addPassXp(kind) {
+    ensureSeason();
+    const table = CFG.BATTLE_PASS && CFG.BATTLE_PASS.xp;
+    const add = (table && table[kind]) || 0;
+    if (add > 0) state.bpXp += add;
+  }
+
+  function passTierReady(i, prem) {
+    const tier = CFG.BATTLE_PASS.tiers[i];
+    if (!tier || state.bpXp < tier.xp) return false;
+    if (prem && !state.bpPremium) return false;
+    const list = prem ? state.bpPrem : state.bpFree;
+    return list.indexOf(i) < 0;
+  }
+
+  function applyPassReward(pack) {
+    if (!pack) return;
+    if (pack.coins) grant(Math.max(20, Math.floor(coinBagAmount() * pack.coins)));
+    if (pack.oranges) state.oranges += pack.oranges;
+    if (pack.boost) state.boostUntil = Date.now() + CFG.BOOST_DURATION_MS;
+    if (pack.skin) unlockSkin(pack.skin);
+    if (pack.acc) state.accUnlocked[pack.acc] = true;
+  }
+
+  function claimPass(i, prem) {
+    if (!passTierReady(i, prem)) return;
+    const tier = CFG.BATTLE_PASS.tiers[i];
+    applyPassReward(prem ? tier.prem : tier.free);
+    (prem ? state.bpPrem : state.bpFree).push(i);
+    celebrate('pass');
+    toast(t('toastPass'));
+    saveAll(true);
+    renderAll();
+  }
+
+  function unlockPremium(via) {
+    if (state.bpPremium) return;
+    if (via === 'oranges') {
+      const cost = CFG.BATTLE_PASS.premiumOranges;
+      if (state.oranges < cost) {
+        toast(t('toastNeedMore'));
+        return;
+      }
+      state.oranges -= cost;
+    }
+    state.bpPremium = true;
+    toast(t('toastPassPrem'));
+    saveAll(true);
+    renderAll();
+  }
+
+  function markSprint(kind) {
+    if (state.sprintClaimed) return;
+    const now = Date.now();
+    if (!state.sprintUntil || now > state.sprintUntil) {
+      state.sprintUntil = now + CFG.SPRINT.windowMs;
+      state.sprintCount = 0;
+    }
+    if (kind) state.sprintCount += 1;
+  }
+
+  function sprintReady() {
+    return !state.sprintClaimed && state.sprintCount >= CFG.SPRINT.need;
+  }
+
+  function claimSprint() {
+    if (!sprintReady()) return;
+    state.sprintClaimed = true;
+    const amount = Math.floor(coinBagAmount() * 2.2 * rewardMult());
+    grant(amount);
+    addPassXp('sprint');
+    celebrate('sprint');
+    toast(t('toastSprint') + ' +' + formatNum(amount));
+    saveAll(true);
+    renderAll();
+  }
+
+  function comebackAmount() {
+    return Math.floor(coinBagAmount() * CFG.RETURN.bagMult);
+  }
+
+  function maybeComeback(awayMs) {
+    if (awayMs < CFG.RETURN.minMs) return false;
+    if (state.comebackOn === todayStr()) return false;
+    state.pendingComeback = true;
+    return true;
+  }
+
+  function claimComeback(mult) {
+    if (!state.pendingComeback && state.comebackOn === todayStr()) return;
+    const amount = comebackAmount() * (mult || 1);
+    grant(amount);
+    state.comebackOn = todayStr();
+    state.pendingComeback = false;
+    addPassXp('comeback');
+    hideModal('comeback');
+    celebrate('comeback');
+    toast(t('toastComeback') + ' +' + formatNum(amount));
+    saveAll(true);
+    renderAll();
+    afterGate();
+  }
+
+  function celebrate(kind) {
+    const layer = $('fx-layer');
+    const stage = $('stage');
+    if (stage) {
+      stage.classList.remove('is-wow');
+      void stage.offsetWidth;
+      stage.classList.add('is-wow');
+    }
+    if (layer) {
+      const colors = ['#f5c76b', '#7eecc0', '#f0a07a', '#fff6ea', '#c7a0f0'];
+      for (let i = 0; i < 18; i += 1) {
+        const p = document.createElement('span');
+        p.className = 'confetti';
+        p.style.background = colors[i % colors.length];
+        p.style.setProperty('--cx', (Math.random() * 220 - 110) + 'px');
+        p.style.setProperty('--cy', (Math.random() * -160 - 20) + 'px');
+        layer.appendChild(p);
+        setTimeout(function () { p.remove(); }, 950);
+      }
+    }
+    playTone(kind === 'ascend' ? 180 : 620, 0.12, 'sine');
+    playTone(880, 0.1, 'triangle');
+    SDK.vibrate(22);
   }
 
   function rollCalendar() {
@@ -503,8 +685,12 @@
       state.dayMaxCombo = 0;
       state.claimedQuests = [];
       state.questIds = pickQuests(today);
+      state.sprintUntil = 0;
+      state.sprintCount = 0;
+      state.sprintClaimed = false;
     }
-    if (!state.questIds.length) state.questIds = pickQuests(today);
+    if (!state.questIds.length || state.questIds.length < 4) state.questIds = pickQuests(today);
+    ensureSeason();
 
     if (state.eventDay !== today) {
       const ev = eventDef();
@@ -554,6 +740,8 @@
       state.boostUntil = Date.now() + CFG.DAILY.day7BoostMs;
       unlockSkin('king');
     }
+    addPassXp('daily');
+    celebrate('daily');
     toast(mult > 1 ? t('toastDailyX2') : t('toastDaily'));
     hideModal('daily');
     saveAll(true);
@@ -607,7 +795,10 @@
       state.claimedQuests.push(id);
       state.questsDone += 1;
     }
+    addPassXp('quest');
+    markSprint('quest');
     refreshSkinUnlocks();
+    celebrate('quest');
     toast(t('toastQuest') + ' +' + formatNum(reward));
     saveAll(true);
     renderAll();
@@ -675,6 +866,7 @@
     state.upgrades[id] = (state.upgrades[id] || 0) + 1;
     state.purchasesSinceAd += 1;
     state.dayBuys += (state.eventId === 'marathon' && state.eventUntil > Date.now()) ? 2 : 1;
+    markSprint('buy');
     unlockFeatures();
     playTone(520, 0.07, 'square');
     saveAll(false);
@@ -880,6 +1072,7 @@
     playTone(720, 0.22, 'sine');
     SDK.vibrate(55);
     shakeStage();
+    celebrate('ascend');
     toast(t('toastAscend') + ' +' + gain);
     saveAll(true);
     pushLeaderboards(true);
@@ -945,6 +1138,8 @@
       grant(Math.max(coinBagAmount() * 4, CFG.STARTER_PACK_CLICKS * clickPower()));
       state.boostUntil = Date.now() + CFG.BOOST_DURATION_MS * 2;
       unlockSkin('ghost');
+    } else if (kind === 'pass') {
+      unlockPremium('iap');
     }
     saveAll(true);
     renderAll();
@@ -954,7 +1149,7 @@
   function buyIap(kind) {
     const id = CFG.YANDEX.IAP[kind];
     if (!id) return;
-    if (kind !== 'starter' && state.iap[kind]) return;
+    if (kind !== 'starter' && kind !== 'pass' && state.iap[kind]) return;
     SDK.purchase(id)
       .then(function (res) {
         const token = res && (res.purchaseToken || (res.purchaseData && res.purchaseData.purchaseToken));
@@ -1014,8 +1209,12 @@
     grant(amount);
     state.lastMiniAt = Date.now();
     hideModal('mini');
+    addPassXp('mini');
     toast(hit ? t('miniHit', { n: formatNum(amount) }) : t('miniMiss', { n: formatNum(amount) }));
-    if (hit) spawnBurst(12);
+    if (hit) {
+      spawnBurst(12);
+      celebrate('mini');
+    }
     saveAll(true);
     renderHud();
   }
@@ -1034,8 +1233,22 @@
     renderEvent();
     renderRebirthChip();
     if ($('bag-amount')) $('bag-amount').textContent = '+' + formatNum(coinBagAmount());
+    const sprintEl = $('sprint-banner');
+    if (sprintEl) {
+      if (sprintReady()) {
+        sprintEl.hidden = false;
+        sprintEl.textContent = t('sprintReady');
+      } else if (state.sprintUntil > Date.now()) {
+        sprintEl.hidden = false;
+        sprintEl.textContent = t('sprintTitle') + ' · ' + t('sprintHint', {
+          n: state.sprintCount,
+          need: CFG.SPRINT.need,
+          m: Math.max(1, Math.ceil((state.sprintUntil - Date.now()) / 60000)),
+        });
+      } else sprintEl.hidden = true;
+    }
     const dot = $('daily-dot');
-    if (dot) dot.hidden = dailyAlready();
+    if (dot) dot.hidden = dailyAlready() && !sprintReady();
     const nowCps = cps();
     if (nowCps > state.maxCps) state.maxCps = nowCps;
   }
@@ -1208,7 +1421,19 @@
     if (!list) return;
     const cards = state.questIds.map((id) => questCard(questById(id), false)).join('');
     const week = questCard(CFG.WEEKLY, true);
-    list.innerHTML = cards + '<div class="branch-label">' + t('weekly') + '</div>' + week;
+    let sprint = '';
+    if (state.sprintUntil > Date.now() || sprintReady()) {
+      sprint = '<article class="quest-card' + (sprintReady() ? ' is-can is-pop' : '') + '">' +
+        '<div class="upg-body"><h3>' + t('sprintTitle') + '</h3><p>' +
+        (sprintReady() ? t('sprintReady') : t('sprintHint', {
+          n: state.sprintCount,
+          need: CFG.SPRINT.need,
+          m: Math.max(1, Math.ceil((state.sprintUntil - Date.now()) / 60000)),
+        })) + '</p></div>' +
+        '<button type="button" class="btn-buy" id="btn-sprint"' + (sprintReady() ? '' : ' disabled') + '>' +
+        '<span>' + t('sprintClaim') + '</span></button></article>';
+    }
+    list.innerHTML = sprint + cards + '<div class="branch-label">' + t('weekly') + '</div>' + week;
   }
 
   function questCard(q, weekly) {
@@ -1219,11 +1444,12 @@
     const done = weekly ? state.weeklyClaimed : state.claimedQuests.indexOf(q.id) >= 0;
     const ready = !done && prog >= target;
     const title = t('q' + q.id, { n: formatNum(target) });
+    const w = q.weight ? '<span class="upg-lv">' + t('weight' + (q.weight === 'light' ? 'Light' : q.weight === 'heavy' ? 'Heavy' : 'Mid')) + '</span>' : '';
     return (
-      '<article class="quest-card">' +
-        '<div class="upg-ico" data-ico="tap"></div>' +
+      '<article class="quest-card' + (ready ? ' is-can is-pop' : '') + (done ? ' is-done' : '') + '">' +
+        '<div class="upg-ico" data-ico="' + (q.weight === 'heavy' ? 'vault' : 'tap') + '"></div>' +
         '<div class="upg-body">' +
-          '<h3>' + title + '</h3>' +
+          '<div class="upg-top"><h3>' + title + '</h3>' + w + '</div>' +
           '<p>' + formatNum(prog) + ' / ' + formatNum(target) + '</p>' +
           '<div class="quest-bar"><i style="width:' + pct + '%"></i></div>' +
         '</div>' +
@@ -1271,11 +1497,55 @@
     }).join('');
   }
 
+  function passRewardLabel(pack) {
+    if (!pack) return '—';
+    const bits = [];
+    if (pack.coins) bits.push('+' + formatNum(Math.max(20, Math.floor(coinBagAmount() * pack.coins))));
+    if (pack.oranges) bits.push('+' + pack.oranges + ' 🍊');
+    if (pack.boost) bits.push('x2');
+    if (pack.skin) bits.push(t('skins.' + pack.skin + '.name'));
+    if (pack.acc) bits.push(t('acc.' + pack.acc + '.name'));
+    return bits.join(' · ') || '—';
+  }
+
+  function renderPass() {
+    ensureSeason();
+    const s = seasonCfg();
+    const day = seasonDayIndex() + 1;
+    const cost = CFG.BATTLE_PASS.premiumOranges;
+    let html = '<div class="pass-head"><h3 style="margin:0">' + t('passTitle') + '</h3>' +
+      '<span>' + t('passDays', { n: day, d: s.days }) + ' · ' + t('passXp', { n: state.bpXp }) + '</span></div>';
+    if (!state.bpPremium) {
+      html += '<div class="prestige-actions" style="margin-bottom:8px">' +
+        '<button type="button" class="primary" data-pass-prem="oranges">' + t('passUnlock', { n: cost }) + '</button>' +
+        '<button type="button" class="secondary" data-pass-prem="ad">' + t('passUnlockAd') + '</button>' +
+        '</div>';
+    }
+    html += '<div class="pass-grid">';
+    CFG.BATTLE_PASS.tiers.forEach((tier, i) => {
+      const freeReady = passTierReady(i, false);
+      const premReady = passTierReady(i, true);
+      const freeDone = state.bpFree.indexOf(i) >= 0;
+      const premDone = state.bpPrem.indexOf(i) >= 0;
+      html += '<div class="pass-row">' +
+        '<div class="pass-idx">' + (i + 1) + '</div>' +
+        '<button type="button" class="pass-cell' + (freeDone ? ' is-done' : freeReady ? ' is-ready' : ' is-lock') + '" data-pass="' + i + '" data-prem="0">' +
+          t('passFree') + ': ' + passRewardLabel(tier.free) +
+        '</button>' +
+        '<button type="button" class="pass-cell' + (!state.bpPremium ? ' is-lock' : premDone ? ' is-done' : premReady ? ' is-ready' : ' is-lock') + '" data-pass="' + i + '" data-prem="1">' +
+          t('passPrem') + ': ' + passRewardLabel(tier.prem) +
+        '</button></div>';
+    });
+    html += '</div>';
+    return html;
+  }
+
   function renderAlbum() {
     const list = $('album-list');
     if (!list) return;
     const done = CFG.ACHIEVEMENTS.filter((a) => state.achieved[a.id]).length;
-    list.innerHTML = '<div class="branch-label">' + t('albumTitle') + ' ' + done + '/' + CFG.ACHIEVEMENTS.length + '</div>' +
+    list.innerHTML = renderPass() +
+      '<div class="branch-label">' + t('albumTitle') + ' ' + done + '/' + CFG.ACHIEVEMENTS.length + '</div>' +
       CFG.ACHIEVEMENTS.map((a) => {
         const got = !!state.achieved[a.id];
         const prog = Math.min(statValue(a.stat), a.at);
@@ -1414,6 +1684,10 @@
       'txt-restore-sub': 'dailyRestore',
       'btn-restore': 'restore',
       'btn-restore-skip': 'skipRestore',
+      'txt-comeback-title': 'comebackTitle',
+      'txt-comeback-sub': 'comebackSub',
+      'btn-comeback': 'comebackClaim',
+      'btn-comeback-x2': 'comebackX2',
     };
     Object.keys(map).forEach((id) => {
       const el = $(id);
@@ -1463,7 +1737,8 @@
     if (el) el.classList.remove('is-on');
     if (!$('offline').classList.contains('is-on') && !$('howto').classList.contains('is-on') &&
         !$('daily').classList.contains('is-on') && !$('restore').classList.contains('is-on') &&
-        !($('mini') && $('mini').classList.contains('is-on'))) {
+        !($('mini') && $('mini').classList.contains('is-on')) &&
+        !($('comeback') && $('comeback').classList.contains('is-on'))) {
       SDK.gameplayStart();
     }
   }
@@ -1512,7 +1787,12 @@
       showModal('restore');
       return;
     }
-    if (!dailyAlready()) {
+    if (state.pendingComeback) {
+      if ($('comeback-amount')) $('comeback-amount').textContent = '+' + formatNum(comebackAmount());
+      showModal('comeback');
+      return;
+    }
+    if (!dailyAlready() && featureOpen('daily')) {
       showDaily();
       return;
     }
@@ -1522,6 +1802,7 @@
   function noteAd() {
     state.dayAds += 1;
     state.adsTotal += 1;
+    markSprint('ad');
   }
 
   function applyReward(type) {
@@ -1547,6 +1828,12 @@
       return;
     } else if (type === 'mini_ad') {
       startMini(true);
+      return;
+    } else if (type === 'comeback_x2') {
+      claimComeback(2);
+      return;
+    } else if (type === 'pass_ad') {
+      unlockPremium('ad');
       return;
     } else if (type === 'skin_ghost') {
       unlockSkin('ghost');
@@ -1628,11 +1915,14 @@
   }
 
   function onVisible() {
+    const away = Date.now() - (state.lastSeen || Date.now());
     const extra = calcOffline(state.lastSeen);
+    maybeComeback(away);
     setPaused(false, 'platform');
     lastTick = performance.now();
     rollCalendar();
     if (extra > 0 && !state.pendingOffline) showOffline(extra);
+    else if (state.pendingComeback) afterGate();
   }
 
   function bind() {
@@ -1659,8 +1949,19 @@
       afterGate();
     });
     $('btn-daily').addEventListener('click', function () {
+      if (sprintReady()) {
+        setShop(true);
+        setTab('quests');
+        return;
+      }
       renderDailyModal();
       showModal('daily');
+    });
+    if ($('btn-comeback')) $('btn-comeback').addEventListener('click', function () { claimComeback(1); });
+    if ($('btn-comeback-x2')) $('btn-comeback-x2').addEventListener('click', function () { requestReward('comeback_x2'); });
+    if ($('sprint-banner')) $('sprint-banner').addEventListener('click', function () {
+      setShop(true);
+      setTab('quests');
     });
     $('btn-daily-claim').addEventListener('click', function () { claimDaily(1); });
     $('btn-daily-x2').addEventListener('click', function () { requestReward('daily_x2'); });
@@ -1680,7 +1981,7 @@
       if (card) card.scrollIntoView({ block: 'nearest' });
     });
 
-    ['daily', 'restore', 'howto', 'mini'].forEach(function (id) {
+    ['daily', 'restore', 'howto', 'mini', 'comeback'].forEach(function (id) {
       const el = $(id);
       if (!el) return;
       el.addEventListener('click', function (e) {
@@ -1700,6 +2001,20 @@
       if (almost) { almostFinish(almost.getAttribute('data-almost')); return; }
       const q = e.target.closest('[data-q]');
       if (q) { claimQuest(q.getAttribute('data-q'), q.hasAttribute('data-weekly')); return; }
+      if (e.target.id === 'btn-sprint' || e.target.closest('#btn-sprint')) { claimSprint(); return; }
+      const passPrem = e.target.closest('[data-pass-prem]');
+      if (passPrem) {
+        const how = passPrem.getAttribute('data-pass-prem');
+        if (how === 'oranges') unlockPremium('oranges');
+        else if (how === 'ad') requestReward('pass_ad');
+        else if (how === 'iap') buyIap('pass');
+        return;
+      }
+      const passCell = e.target.closest('[data-pass]');
+      if (passCell) {
+        claimPass(Number(passCell.getAttribute('data-pass')), passCell.getAttribute('data-prem') === '1');
+        return;
+      }
       const wear = e.target.closest('[data-wear]');
       if (wear) { wearSkin(wear.getAttribute('data-wear')); return; }
       const skinAd = e.target.closest('[data-skin-ad]');
@@ -1789,6 +2104,8 @@
         unlockFeatures();
         checkAchievements();
 
+        const away = Date.now() - ((best && best.lastSeen) || Date.now());
+        maybeComeback(away);
         const offline = calcOffline(best && best.lastSeen);
         saveLocal();
 

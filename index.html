@@ -45,6 +45,7 @@
           <span id="hud-mult" class="mult-chip">×1</span>
         </div>
         <div id="event-banner" hidden></div>
+        <div id="sprint-banner" hidden></div>
       </div>
       <div class="icon-btns">
         <button type="button" class="icon-btn" id="btn-daily" title="Ежедневка">
@@ -84,6 +85,7 @@
     <main id="stage">
       <div class="ring" aria-hidden="true"></div>
       <div id="float-layer"></div>
+      <div id="fx-layer" aria-hidden="true"></div>
       <div id="combo" hidden>x2</div>
       <button type="button" id="btn-rebirth-chip" class="rebirth-chip" hidden></button>
 
@@ -254,6 +256,18 @@
       <div id="lb-panel" class="hub-pane" hidden></div>
       <div id="prestige-card"></div>
     </aside>
+  </div>
+
+  <div class="modal" id="comeback">
+    <div class="modal-card">
+      <h2 id="txt-comeback-title">С возвращением</h2>
+      <p id="txt-comeback-sub">Тебя не было больше полутора часов. Жирный мешок ждёт.</p>
+      <div class="offline-sum" id="comeback-amount">+0</div>
+      <div class="row">
+        <button type="button" class="primary" id="btn-comeback">Забрать x2 мешок</button>
+        <button type="button" class="secondary" id="btn-comeback-x2">Забрать x4 за рекламу</button>
+      </div>
+    </div>
   </div>
 
   <div class="modal" id="offline">
