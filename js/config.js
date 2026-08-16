@@ -221,6 +221,56 @@ window.CCT_CONFIG = {
   },
 
   /**
+   * Каталог режимов. Новый ивент = новая запись + слот в SCHEDULE/ROTATOR.
+   * game.js читает только ключи effects, длительность и вес.
+   */
+  MODES: {
+    bull: { hours: 1.5, incomeMult: 2.5 },
+    bear: { hours: 1.5, incomeMult: 0.75, rewardMult: 2.2, passXpMult: 1.5 },
+    orange: { hours: 1.5, comboBonus: 180 },
+    festival: { hours: 1.5, unlockSkin: 'festival', rewardMult: 1.2 },
+    marathon: { hours: 2, questMult: 2 },
+    orange_rain: { hours: 2, orangeChance: 0.07, miniFree: true },
+    combo_storm: {
+      hours: 2,
+      comboBonus: 280,
+      comboTiers: [{ at: 48, mult: 5 }, { at: 72, mult: 6 }],
+      fatParticles: true,
+    },
+    quiet_whale: { hours: 2, incomeMult: 0.7, orangeReward: 1, passXpMult: 2 },
+    double_rebirth: { hours: 2, prestigeMult: 1.75 },
+    weekend_marathon: { hours: 6, sprintNeed: 5, sprintBag: 3.2 },
+    capy_boom: { hours: 1.5, shopCps: 0.08, shopCpsMs: 60 * 60 * 1000 },
+    night_raid: { hours: 2, incomeMult: 1.25, title: 'night', nightOnly: true },
+    collect_weekend: { hours: 6, albumBonus: 1 },
+  },
+
+  /** Закреплённые режимы по дню недели (0 вс). */
+  EVENT_SCHEDULE: {
+    0: ['weekend_marathon', 'collect_weekend'],
+    1: ['bear'],
+    2: ['quiet_whale'],
+    3: ['orange'],
+    4: ['festival'],
+    5: ['marathon'],
+    6: ['weekend_marathon', 'bull'],
+  },
+
+  /** Короткий слот 1–2 часа поверх расписания. */
+  ROTATOR: {
+    slotHours: 2,
+    pool: ['orange_rain', 'combo_storm', 'quiet_whale', 'double_rebirth', 'capy_boom'],
+  },
+
+  CHALLENGES: {
+    cpsMinutes: 10,
+    throwAttempts: 5,
+    noAdsOranges: 2,
+    noAdsMs: 60 * 60 * 1000,
+    streakOranges: 1,
+  },
+
+  /**
    * Квесты дня. weight: light / mid / heavy.
    * Каждый день: 2 лёгких + 2 средних + 1 жирный.
    */
@@ -247,16 +297,6 @@ window.CCT_CONFIG = {
     { at: 1e8, id: 'myth' },
   ],
 
-  /**
-   * Лайв-ивенты по дню недели (локальное время игрока).
-   * 0 вс … 6 сб
-   */
-  EVENTS: {
-    0: { id: 'bull', mult: 2.5, minutes: 90 },
-    1: { id: 'bear', mult: 0.75, rewardMult: 2.2, minutes: 90 },
-    3: { id: 'orange', comboBonus: 180, minutes: 90 },
-    4: { id: 'festival', minutes: 90 },
-    5: { id: 'marathon', minutes: 120 },
-    6: { id: 'bull', mult: 2.5, minutes: 90 },
-  },
+  /** @deprecated слоты теперь в EVENT_SCHEDULE + MODES */
+  EVENTS: {},
 };

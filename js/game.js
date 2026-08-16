@@ -68,6 +68,16 @@
     sprintUntil: 0,
     sprintCount: 0,
     sprintClaimed: false,
+    modes: [],
+    modeSlot: '',
+    boomUntil: 0,
+    boomCps: 0,
+    noAdsUntil: 0,
+    cpsSprintUntil: 0,
+    cpsSprintStart: 0,
+    cpsSprintBest: 0,
+    throwLeft: 0,
+    throwHits: 0,
   };
 
   let lastTick = 0;
@@ -153,25 +163,100 @@
     return 1 + (state.upgrades.nft || 0) * (u ? u.power : 0);
   }
 
+  function modeCatalog(id) {
+    return (CFG.MODES && CFG.MODES[id]) || null;
+  }
+
+  function liveModes() {
+    const now = Date.now();
+    return (state.modes || [])
+      .filter((m) => m.until > now)
+      .map((m) => Object.assign({ id: m.id, until: m.until }, modeCatalog(m.id)))
+      .filter((m) => m.id && (CFG.MODES[m.id] || m.hours));
+  }
+
+  function modeAny(key) {
+    return liveModes().some((m) => !!m[key]);
+  }
+
+  function modeProd(key) {
+    return liveModes().reduce((n, m) => n * (m[key] != null ? m[key] : 1), 1);
+  }
+
+  function modeSum(key) {
+    return liveModes().reduce((n, m) => n + (Number(m[key]) || 0), 0);
+  }
+
+  function modeMax(key, fallback) {
+    let v = fallback;
+    liveModes().forEach((m) => {
+      if (m[key] != null && m[key] > v) v = m[key];
+    });
+    return v;
+  }
+
   function eventDef() {
-    return CFG.EVENTS[new Date().getDay()] || null;
+    const live = liveModes();
+    return live[0] || null;
   }
 
   function eventMult() {
-    if (state.eventUntil <= Date.now()) return 1;
-    if (state.eventId === 'bull' || state.eventId === 'bear') {
-      const ev = eventDef();
-      return (ev && ev.mult) || 1;
-    }
-    return 1;
+    return modeProd('incomeMult');
   }
 
   function rewardMult() {
-    if (state.eventId === 'bear' && state.eventUntil > Date.now()) {
-      const ev = eventDef();
-      return (ev && ev.rewardMult) || 2;
+    return modeProd('rewardMult');
+  }
+
+  function hashedPick(key, pool) {
+    if (!pool || !pool.length) return null;
+    let h = 2166136261;
+    for (let i = 0; i < key.length; i += 1) h = Math.imul(h ^ key.charCodeAt(i), 16777619);
+    return pool[(h >>> 0) % pool.length];
+  }
+
+  function refreshModes() {
+    const now = Date.now();
+    const hour = new Date().getHours();
+    const slotH = (CFG.ROTATOR && CFG.ROTATOR.slotHours) || 2;
+    const slot = todayStr() + '-h' + Math.floor(hour / slotH);
+    const pinned = ((CFG.EVENT_SCHEDULE && CFG.EVENT_SCHEDULE[new Date().getDay()]) || []).slice();
+    const rot = hashedPick(slot, (CFG.ROTATOR && CFG.ROTATOR.pool) || []);
+    if (rot && pinned.indexOf(rot) < 0) pinned.push(rot);
+    if (hour >= 22 || hour < 5) pinned.push('night_raid');
+
+    const keep = {};
+    (state.modes || []).forEach((m) => {
+      if (m.until > now) keep[m.id] = m;
+    });
+
+    const next = [];
+    const seen = {};
+    pinned.forEach((id) => {
+      if (seen[id] || !modeCatalog(id)) return;
+      seen[id] = true;
+      const def = modeCatalog(id);
+      if (def.nightOnly && hour < 22 && hour >= 5) return;
+      if (keep[id]) {
+        next.push(keep[id]);
+        return;
+      }
+      next.push({ id: id, until: now + (def.hours || 1.5) * 3600000 });
+      if (def.unlockSkin) unlockSkin(def.unlockSkin, true);
+      if (def.title && state.title !== def.title) {
+        state.title = def.title;
+        toast(t('toastNight'));
+      }
+    });
+    state.modes = next;
+    state.modeSlot = slot;
+    if (next[0]) {
+      state.eventId = next[0].id;
+      state.eventUntil = next[0].until;
+    } else {
+      state.eventId = null;
+      state.eventUntil = 0;
     }
-    return 1;
   }
 
   function whaleLv(id) {
@@ -188,18 +273,17 @@
   }
 
   function comboWindow() {
-    let w = CFG.COMBO.windowMs + whaleLv('juice') * (whaleDef('juice').power);
-    if (state.eventId === 'orange' && state.eventUntil > Date.now()) {
-      const ev = eventDef();
-      w += (ev && ev.comboBonus) || 180;
-    }
-    return w;
+    return CFG.COMBO.windowMs + whaleLv('juice') * (whaleDef('juice').power) + modeSum('comboBonus');
   }
 
   function comboMult() {
     let m = 1;
-    CFG.COMBO.tiers.forEach((tier) => {
-      if (state.combo >= tier.at) m = tier.mult;
+    const tiers = CFG.COMBO.tiers.slice();
+    liveModes().forEach((mode) => {
+      if (mode.comboTiers) mode.comboTiers.forEach((x) => tiers.push(x));
+    });
+    tiers.forEach((tier) => {
+      if (state.combo >= tier.at) m = Math.max(m, tier.mult);
     });
     return m;
   }
@@ -240,7 +324,9 @@
 
   function cps() {
     const m = incomeMult();
-    return rawCps() * m + autotapRate() * clickBase() * m;
+    let extra = 0;
+    if (state.boomUntil > Date.now()) extra = state.boomCps || 0;
+    return rawCps() * m + autotapRate() * clickBase() * m + extra;
   }
 
   function upgradeCost(id) {
@@ -290,7 +376,7 @@
     state.runEarned += amount;
     state.dayEarned += amount;
     state.weekEarned += amount;
-    if (state.eventId === 'marathon' && state.eventUntil > Date.now()) {
+    if (modeAny('questMult')) {
       state.dayEarned += amount;
       state.weekEarned += amount;
     }
@@ -351,6 +437,11 @@
       sprintUntil: state.sprintUntil,
       sprintCount: state.sprintCount,
       sprintClaimed: state.sprintClaimed,
+      modes: (state.modes || []).map((m) => ({ id: m.id, until: m.until })),
+      modeSlot: state.modeSlot,
+      boomUntil: state.boomUntil,
+      boomCps: state.boomCps,
+      noAdsUntil: state.noAdsUntil,
     };
   }
 
@@ -361,7 +452,7 @@
       'streak', 'bestStreak', 'dayEarned', 'dayTaps', 'dayBuys', 'dayAds', 'dayMaxCombo',
       'questsDone', 'weekEarned', 'eventUntil', 'maxCps', 'adsTotal', 'lastSeen',
       'oranges', 'ascensionCount', 'lifetimeTaps', 'bestCombo', 'lastMiniAt',
-      'bpXp', 'sprintUntil', 'sprintCount',
+      'bpXp', 'sprintUntil', 'sprintCount', 'boomUntil', 'boomCps', 'noAdsUntil',
     ];
     nums.forEach((k) => {
       if (typeof data[k] === 'number' && isFinite(data[k])) state[k] = Math.max(0, data[k]);
@@ -399,6 +490,8 @@
     if (typeof data.sprintClaimed === 'boolean') state.sprintClaimed = data.sprintClaimed;
     if (Array.isArray(data.bpFree)) state.bpFree = data.bpFree.slice();
     if (Array.isArray(data.bpPrem)) state.bpPrem = data.bpPrem.slice();
+    if (Array.isArray(data.modes)) state.modes = data.modes.slice();
+    if (typeof data.modeSlot === 'string') state.modeSlot = data.modeSlot;
   }
 
   function mergeBetter(a, b) {
@@ -423,13 +516,17 @@
     } catch (e) { /* quota */ }
   }
 
+  function adsMuted() {
+    return !!(state.iap && state.iap.noAds) || state.noAdsUntil > Date.now();
+  }
+
   function saveAll(flush) {
     state.lastSeen = Date.now();
     saveLocal();
     const snap = snapshot();
     if (flush) SDK.flushCloud(snap);
     else SDK.saveCloud(snap);
-    SDK.setNoAds(!!state.iap.noAds);
+    SDK.setNoAds(adsMuted());
     SDK.saveStats({
       coins: Math.floor(state.coins),
       totalEarned: Math.floor(state.totalEarned),
@@ -459,6 +556,7 @@
     if (run < CFG.PRESTIGE.minRun) return 0;
     let pts = Math.max(1, Math.floor(Math.sqrt(run / CFG.PRESTIGE.unit)));
     pts += whaleLv('tip') * whaleDef('tip').power;
+    pts = Math.max(1, Math.floor(pts * modeProd('prestigeMult')));
     if (withAd) pts = Math.max(pts + 1, Math.floor(pts * (1 + CFG.PRESTIGE.adBonus)));
     return pts;
   }
@@ -545,7 +643,7 @@
     ensureSeason();
     const table = CFG.BATTLE_PASS && CFG.BATTLE_PASS.xp;
     const add = (table && table[kind]) || 0;
-    if (add > 0) state.bpXp += add;
+    if (add > 0) state.bpXp += Math.round(add * modeProd('passXpMult'));
   }
 
   function passTierReady(i, prem) {
@@ -602,14 +700,20 @@
     if (kind) state.sprintCount += 1;
   }
 
+  function sprintNeed() {
+    return modeMax('sprintNeed', CFG.SPRINT.need);
+  }
+
   function sprintReady() {
-    return !state.sprintClaimed && state.sprintCount >= CFG.SPRINT.need;
+    return !state.sprintClaimed && state.sprintCount >= sprintNeed();
   }
 
   function claimSprint() {
     if (!sprintReady()) return;
     state.sprintClaimed = true;
-    const amount = Math.floor(coinBagAmount() * 2.2 * rewardMult());
+    const bag = modeMax('sprintBag', 2.2);
+    const amount = Math.floor(coinBagAmount() * bag * rewardMult());
+    if (modeSum('orangeReward')) state.oranges += modeSum('orangeReward');
     grant(amount);
     addPassXp('sprint');
     celebrate('sprint');
@@ -691,18 +795,7 @@
     }
     if (!state.questIds.length || state.questIds.length < 4) state.questIds = pickQuests(today);
     ensureSeason();
-
-    if (state.eventDay !== today) {
-      const ev = eventDef();
-      state.eventDay = today;
-      if (ev) {
-        state.eventId = ev.id;
-        state.eventUntil = Date.now() + ev.minutes * 60 * 1000;
-      } else {
-        state.eventId = null;
-        state.eventUntil = 0;
-      }
-    }
+    refreshModes();
 
     state.pendingRestore = false;
     if (state.dailyClaimedOn && state.dailyClaimedOn !== today) {
@@ -741,6 +834,7 @@
       unlockSkin('king');
     }
     addPassXp('daily');
+    if (modeSum('orangeReward')) state.oranges += modeSum('orangeReward');
     celebrate('daily');
     toast(mult > 1 ? t('toastDailyX2') : t('toastDaily'));
     hideModal('daily');
@@ -797,6 +891,7 @@
     }
     addPassXp('quest');
     markSprint('quest');
+    if (modeSum('orangeReward')) state.oranges += modeSum('orangeReward');
     refreshSkinUnlocks();
     celebrate('quest');
     toast(t('toastQuest') + ' +' + formatNum(reward));
@@ -823,7 +918,7 @@
       if (u.type === 'quests' && state.questsDone >= u.n) unlockSkin(s.id);
       if (u.type === 'streak' && state.bestStreak >= u.n) unlockSkin(s.id);
       if (u.type === 'achieve' && state.achieved[u.id]) unlockSkin(s.id);
-      if (u.type === 'event' && state.eventId === u.id && state.eventUntil > Date.now()) unlockSkin(s.id);
+      if (u.type === 'event' && liveModes().some((m) => m.id === u.id || m.unlockSkin === s.id)) unlockSkin(s.id);
     });
     CFG.ACCESSORIES.forEach((a) => {
       const u = a.unlock;
@@ -865,7 +960,13 @@
     state.coins -= cost;
     state.upgrades[id] = (state.upgrades[id] || 0) + 1;
     state.purchasesSinceAd += 1;
-    state.dayBuys += (state.eventId === 'marathon' && state.eventUntil > Date.now()) ? 2 : 1;
+    state.dayBuys += modeAny('questMult') ? 2 : 1;
+    if (modeAny('shopCps')) {
+      const def = liveModes().find((m) => m.shopCps);
+      state.boomCps = (state.boomCps || 0) + Math.max(0.2, clickBase() * (def.shopCps || 0.08));
+      state.boomUntil = Date.now() + (def.shopCpsMs || 3600000);
+      toast(t('toastBoom'));
+    }
     markSprint('buy');
     unlockFeatures();
     playTone(520, 0.07, 'square');
@@ -888,7 +989,7 @@
     state.lastTap = now;
     if (state.combo > state.dayMaxCombo) state.dayMaxCombo = state.combo;
     if (state.combo > state.bestCombo) state.bestCombo = state.combo;
-    state.dayTaps += (state.eventId === 'marathon' && state.eventUntil > Date.now()) ? 2 : 1;
+    state.dayTaps += modeAny('questMult') ? 2 : 1;
     state.lifetimeTaps += 1;
     const amount = clickPower();
     grant(amount);
@@ -898,7 +999,13 @@
     squashCapy();
     playTap();
     SDK.vibrate(comboMult() >= 3 ? 18 : 8);
-    if (comboMult() >= 2) spawnBurst(comboMult() >= 3 ? 10 : 5);
+    if (comboMult() >= 2) spawnBurst(modeAny('fatParticles') || comboMult() >= 3 ? 14 : 6);
+    const chance = modeSum('orangeChance');
+    if (chance > 0 && Math.random() < chance) {
+      state.oranges += 1;
+      spawnFloater(clientX, clientY - 24, '🍊', true);
+      if (state.lifetimeTaps % 8 === 0) toast(t('toastOrangeDrop'));
+    }
     if (state.lifetimeTaps % 40 === 0) checkAchievements();
     renderHud();
   }
@@ -1030,6 +1137,7 @@
       if (statValue(a.stat) < a.at) return;
       state.achieved[a.id] = true;
       changed = true;
+      if (modeSum('albumBonus')) state.oranges += modeSum('albumBonus');
       if (a.reward) {
         if (a.reward.oranges) state.oranges += a.reward.oranges;
         if (a.reward.skin) unlockSkin(a.reward.skin);
@@ -1176,8 +1284,60 @@
     });
   }
 
+  function startCpsSprint() {
+    if (state.cpsSprintUntil > Date.now()) return;
+    state.cpsSprintUntil = Date.now() + CFG.CHALLENGES.cpsMinutes * 60000;
+    state.cpsSprintStart = cps();
+    state.cpsSprintBest = state.cpsSprintStart;
+    toast(t('chCpsGo'));
+  }
+
+  function tickCpsSprint() {
+    if (!state.cpsSprintUntil) return;
+    const nowC = cps();
+    if (nowC > state.cpsSprintBest) state.cpsSprintBest = nowC;
+    if (Date.now() < state.cpsSprintUntil) return;
+    const gain = Math.max(0, state.cpsSprintBest - state.cpsSprintStart);
+    const reward = Math.floor(coinBagAmount() * (1 + Math.min(2.5, gain / Math.max(1, state.cpsSprintStart))));
+    state.cpsSprintUntil = 0;
+    grant(reward);
+    toast(t('chCpsEnd', { n: formatNum(gain), r: formatNum(reward) }));
+    celebrate('sprint');
+    saveAll(true);
+  }
+
+  function startThrowSeries() {
+    state.throwLeft = CFG.CHALLENGES.throwAttempts;
+    state.throwHits = 0;
+    startMini(true);
+  }
+
+  function buyNoAdsHour() {
+    const cost = CFG.CHALLENGES.noAdsOranges;
+    if (state.oranges < cost) {
+      toast(t('toastNeedMore'));
+      return;
+    }
+    state.oranges -= cost;
+    state.noAdsUntil = Date.now() + CFG.CHALLENGES.noAdsMs;
+    SDK.setNoAds(true);
+    toast(t('chNoAdsOk'));
+    saveAll(true);
+  }
+
+  function restoreStreakOrange() {
+    const cost = CFG.CHALLENGES.streakOranges;
+    if (state.oranges < cost) {
+      toast(t('toastNeedMore'));
+      return;
+    }
+    state.oranges -= cost;
+    restoreStreak();
+  }
+
   let miniArmed = false;
   function miniFreeReady() {
+    if (modeAny('miniFree') || state.throwLeft > 0) return true;
     return Date.now() - (state.lastMiniAt || 0) >= CFG.MINIGAME.cooldownMs;
   }
 
@@ -1205,15 +1365,24 @@
     const width = track.clientWidth || 1;
     const pct = left / width;
     const hit = pct >= 0.40 && pct <= 0.60;
-    const amount = Math.floor((hit ? coinBagAmount() * 1.4 : coinBagAmount() * 0.25) * rewardMult());
+    let bagK = hit ? 1.4 : 0.25;
+    if (state.throwLeft > 0) {
+      state.throwLeft -= 1;
+      if (hit) state.throwHits += 1;
+      bagK *= 1 + state.throwHits * 0.35;
+    }
+    const amount = Math.floor(coinBagAmount() * bagK * rewardMult());
     grant(amount);
-    state.lastMiniAt = Date.now();
+    if (!modeAny('miniFree') && state.throwLeft <= 0) state.lastMiniAt = Date.now();
     hideModal('mini');
     addPassXp('mini');
     toast(hit ? t('miniHit', { n: formatNum(amount) }) : t('miniMiss', { n: formatNum(amount) }));
     if (hit) {
-      spawnBurst(12);
+      spawnBurst(modeAny('fatParticles') ? 18 : 12);
       celebrate('mini');
+    }
+    if (state.throwLeft > 0) {
+      setTimeout(function () { startMini(true); }, 280);
     }
     saveAll(true);
     renderHud();
@@ -1242,7 +1411,7 @@
         sprintEl.hidden = false;
         sprintEl.textContent = t('sprintTitle') + ' · ' + t('sprintHint', {
           n: state.sprintCount,
-          need: CFG.SPRINT.need,
+          need: sprintNeed(),
           m: Math.max(1, Math.ceil((state.sprintUntil - Date.now()) / 60000)),
         });
       } else sprintEl.hidden = true;
@@ -1251,6 +1420,13 @@
     if (dot) dot.hidden = dailyAlready() && !sprintReady();
     const nowCps = cps();
     if (nowCps > state.maxCps) state.maxCps = nowCps;
+    tickCpsSprint();
+    SDK.setNoAds(adsMuted());
+    const cpsBtn = $('btn-ch-cps');
+    if (cpsBtn) {
+      cpsBtn.classList.toggle('is-on', state.cpsSprintUntil > Date.now());
+      cpsBtn.title = t('chCps');
+    }
   }
 
   function renderBoost() {
@@ -1286,19 +1462,18 @@
   function renderEvent() {
     const el = $('event-banner');
     if (!el) return;
-    if (!state.eventId || state.eventUntil <= Date.now()) {
+    refreshModes();
+    const live = liveModes();
+    if (!live.length) {
       el.hidden = true;
       return;
     }
-    const left = Math.max(0, state.eventUntil - Date.now());
-    const mins = Math.ceil(left / 60000);
-    let text = t('eventOrange');
-    if (state.eventId === 'bull') text = t('eventBull', { n: String(eventMult()) });
-    if (state.eventId === 'bear') text = t('eventBear', { n: String(eventMult()) });
-    if (state.eventId === 'marathon') text = t('eventMarathon');
-    if (state.eventId === 'festival') text = t('skins.festival.name');
+    const names = live.map((m) => {
+      const left = Math.max(1, Math.ceil((m.until - Date.now()) / 60000));
+      return t('modes.' + m.id) + ' ' + t('eventLeft', { n: left + 'м' });
+    });
     el.hidden = false;
-    el.textContent = text + ' · ' + t('eventLeft', { n: mins + 'м' });
+    el.textContent = names.join(' · ');
   }
 
   function renderRebirthChip() {
@@ -1427,7 +1602,7 @@
         '<div class="upg-body"><h3>' + t('sprintTitle') + '</h3><p>' +
         (sprintReady() ? t('sprintReady') : t('sprintHint', {
           n: state.sprintCount,
-          need: CFG.SPRINT.need,
+          need: sprintNeed(),
           m: Math.max(1, Math.ceil((state.sprintUntil - Date.now()) / 60000)),
         })) + '</p></div>' +
         '<button type="button" class="btn-buy" id="btn-sprint"' + (sprintReady() ? '' : ' disabled') + '>' +
@@ -1683,6 +1858,7 @@
       'txt-restore-title': 'toastStreakLost',
       'txt-restore-sub': 'dailyRestore',
       'btn-restore': 'restore',
+      'btn-restore-orange': 'chStreakOrange',
       'btn-restore-skip': 'skipRestore',
       'txt-comeback-title': 'comebackTitle',
       'txt-comeback-sub': 'comebackSub',
@@ -1966,7 +2142,11 @@
     $('btn-daily-claim').addEventListener('click', function () { claimDaily(1); });
     $('btn-daily-x2').addEventListener('click', function () { requestReward('daily_x2'); });
     $('btn-restore').addEventListener('click', function () { requestReward('streak_restore'); });
+    if ($('btn-restore-orange')) $('btn-restore-orange').addEventListener('click', function () { restoreStreakOrange(); });
     $('btn-restore-skip').addEventListener('click', function () { skipRestore(); });
+    if ($('btn-ch-cps')) $('btn-ch-cps').addEventListener('click', function () { startCpsSprint(); });
+    if ($('btn-ch-throw')) $('btn-ch-throw').addEventListener('click', function () { startThrowSeries(); });
+    if ($('btn-ch-noads')) $('btn-ch-noads').addEventListener('click', function () { buyNoAdsHour(); });
     $('btn-mini').addEventListener('click', function () {
       if (miniFreeReady()) startMini(false);
       else requestReward('mini_ad');
@@ -2099,7 +2279,7 @@
         rollCalendar();
         refreshSkinUnlocks();
         applySkin();
-        SDK.setNoAds(!!state.iap.noAds);
+        SDK.setNoAds(adsMuted());
         restoreIap();
         unlockFeatures();
         checkAchievements();
